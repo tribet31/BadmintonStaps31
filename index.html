@@ -764,24 +764,33 @@ function renderPlayerGrid(pArr) {
   const label = document.getElementById('pickingLabel');
   if (!grid) return;
 
-  // Bloquer si pas de séance active
-  if (!session) {
-    grid.className = '';
-    grid.innerHTML = `
-      <div style="text-align:center;padding:20px;background:var(--card);border:1px solid var(--border);
-                  border-radius:14px;display:flex;flex-direction:column;align-items:center;gap:10px">
-        <div style="font-size:32px">🔒</div>
-        <div style="font-size:14px;font-weight:700;color:var(--text)">Séance non démarrée</div>
-        <div style="font-size:12px;color:var(--muted)">Appuyez sur ▶ Démarrer pour activer la saisie</div>
-      </div>`;
-    if (label) label.textContent = '';
-    return;
-  }
-
   const sorted = [...pArr].sort((a,b) => b.elo - a.elo);
 
   if (sorted.length === 0) {
     grid.innerHTML = '<div class="empty">Aucun joueur disponible</div>';
+    if (label) label.textContent = '';
+    return;
+  }
+
+  // Pas de séance → afficher les joueurs grisés avec message
+  if (!session) {
+    if (label) label.textContent = '';
+    grid.className = 'player-grid';
+    grid.innerHTML = `
+      <div style="grid-column:1/-1;text-align:center;padding:12px 8px;background:rgba(245,158,11,0.06);
+                  border:1px solid rgba(245,158,11,0.2);border-radius:12px;margin-bottom:4px">
+        <div style="font-size:13px;font-weight:700;color:var(--accent)">🔒 Démarrez la séance pour jouer</div>
+      </div>
+      ${sorted.map(p => {
+        const avatarBg = p.gender==='F' ? 'var(--female)' : 'var(--male)';
+        return `<button class="player-grid-btn disabled" style="opacity:.4;cursor:not-allowed">
+          <div class="avatar" style="width:38px;height:38px;font-size:16px;background:${avatarBg}">
+            ${p.name[0].toUpperCase()}
+          </div>
+          <span class="pgname">${p.name}</span>
+          <span class="pgelo">${p.elo} pts</span>
+        </button>`;
+      }).join('')}`;
     return;
   }
 
@@ -796,7 +805,7 @@ function renderPlayerGrid(pArr) {
     let cls = 'player-grid-btn';
     if (p.id === matchP1Id) cls += ' selected-p1';
     else if (p.id === matchP2Id) cls += ' selected-p2';
-    else if ((matchP1Id && matchP2Id)) cls += ' disabled';
+    else if (matchP1Id && matchP2Id) cls += ' disabled';
     const avatarBg = p.gender==='F' ? 'var(--female)' : 'var(--male)';
     const badge = p.id===matchP1Id ? '✓1' : p.id===matchP2Id ? '✓2' : '';
     return `
@@ -1277,7 +1286,8 @@ function renderRanking() {
     <div style="font-size:12px;color:var(--muted);text-align:center">Scannez pour voir le classement en direct</div>
     <img src="${qr}" style="border-radius:10px;border:3px solid var(--accent);width:180px;height:180px"/>
     <button class="btn-share" onclick="navigator.clipboard?.writeText('${pageUrl}');showToast('Lien copié !')">📋 Copier le lien</button>
-    <button class="btn-share" style="background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.3);color:var(--male)" onclick="changeGroup()">🔄 Changer de groupe</button>`;
+    <button class="btn-share" style="background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.3);color:var(--male)" onclick="changeGroup()">🔄 Changer de groupe</button>
+    <button id="deployBtn" class="btn-share" style="background:rgba(139,92,246,.1);border-color:rgba(139,92,246,.3);color:#8b5cf6" onclick="deployToGithub()">🚀 Déployer sur GitHub</button>`;
 }
 
 function setRankFilter(id) { rankingGroupFilter=id; renderRanking(); }
@@ -1697,7 +1707,71 @@ function initActiveGroup(groupId) {
 }
 window.initActiveGroup = initActiveGroup;
 
-function changeGroup() {
+// ── DEPLOY TO GITHUB ─────────────────────────────────────────────────────────
+const GH_TOKEN = "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";
+const GH_REPO  = "tribet31/BadmintonStaps31";
+const GH_FILE  = "index.html";
+
+async function deployToGithub() {
+  const btn = document.getElementById('deployBtn');
+  btn.textContent = '⏳ Déploiement…';
+  btn.style.opacity = '.7';
+  btn.style.pointerEvents = 'none';
+
+  try {
+    // 1. Récupérer le SHA actuel du fichier
+    const infoR = await fetch(`https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`, {
+      headers: { Authorization: `token ${GH_TOKEN}`, Accept: 'application/vnd.github.v3+json' }
+    });
+    const info = await infoR.json();
+    const sha = info.sha;
+
+    // 2. Lire le contenu actuel de la page (le fichier index.html lui-même)
+    const pageR = await fetch(window.location.href);
+    const pageContent = await pageR.text();
+    const encoded = btoa(unescape(encodeURIComponent(pageContent)));
+
+    // 3. Pousser vers GitHub
+    const pushR = await fetch(`https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${GH_TOKEN}`,
+        Accept: 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: `Mise à jour BadmintonRank — ${new Date().toLocaleDateString('fr-FR')}`,
+        content: encoded,
+        sha: sha
+      })
+    });
+
+    if (!pushR.ok) {
+      const err = await pushR.json();
+      throw new Error(err.message || `HTTP ${pushR.status}`);
+    }
+
+    btn.textContent = '✅ Déployé !';
+    btn.style.background = 'rgba(16,185,129,.15)';
+    btn.style.borderColor = 'var(--green)';
+    btn.style.color = 'var(--green)';
+    setTimeout(() => {
+      btn.textContent = '🚀 Déployer sur GitHub';
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'auto';
+      btn.style.background = '';
+      btn.style.borderColor = '';
+      btn.style.color = '';
+    }, 3000);
+
+  } catch(e) {
+    showToast('Erreur déploiement : ' + e.message, 'err');
+    btn.textContent = '🚀 Déployer sur GitHub';
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
+  }
+}
+window.deployToGithub = deployToGithub;
   activeGroupId = null;
   sessionStorage.removeItem('activeGroupId');
   selectedGroupId = null;
