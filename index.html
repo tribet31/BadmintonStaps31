@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="theme-color" content="#0a0f1e"/>
+  <title>🏸 BadmintonRank</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    :root {
+      --bg: #0a0f1e; --card: #111827; --border: #1f2d40;
+      --accent: #f59e0b; --text: #f1f5f9; --muted: #64748b;
+      --green: #10b981; --red: #ef4444; --female: #ec4899; --male: #3b82f6;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+    }
+
+    html { height: -webkit-fill-available; }
+
+    body {
+      font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text);
+      max-width: 480px; margin: 0 auto;
+      min-height: 100vh; min-height: -webkit-fill-available;
+      padding-bottom: calc(70px + var(--safe-bottom));
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior-y: none;
+    }
+
+    .bg-glow { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background: radial-gradient(ellipse at 15% 0%, rgba(245,158,11,0.07) 0%, transparent 55%),
+                  radial-gradient(ellipse at 85% 100%, rgba(59,130,246,0.05) 0%, transparent 55%); }
+
+    /* HEADER — tient compte de la barre de statut iPhone */
+    header {
+      position: sticky; top: 0; z-index: 10;
+      background: rgba(10,15,30,0.97);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 18px;
+      padding-top: calc(12px + var(--safe-top));
+      display: flex; align-items: center; gap: 12px;
+    }
+    .header-title { font-size: 19px; font-weight: 800; color: var(--accent); letter-spacing: -0.5px; }
+    .header-sub { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 1px; }
+    .sync-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green);
+      box-shadow: 0 0 6px var(--green); margin-left: auto; transition: background .3s; flex-shrink: 0; }
+    .sync-dot.syncing { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: blink 0.8s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* NAV — collée au bas avec safe area */
+    nav {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      max-width: 480px; margin: 0 auto;
+      background: rgba(10,15,30,0.98);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid var(--border);
+      display: flex; z-index: 20;
+      padding-bottom: var(--safe-bottom);
+    }
+    .nav-btn {
+      flex: 1; background: none; border: none;
+      padding: 10px 4px 8px;
+      min-height: 56px;
+      cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+      color: var(--muted); font-family: 'DM Sans', sans-serif; transition: color .15s;
+      -webkit-touch-callout: none;
+    }
+    .nav-btn.active { color: var(--accent); }
+    .nav-icon { font-size: 22px; line-height: 1; }
+    .nav-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+
+    /* MAIN */
+    main { padding: 14px 14px; position: relative; z-index: 1; }
+    .tab { display: none; flex-direction: column; gap: 12px; }
+
+    /* TYPOGRAPHY */
+    h2 { font-size: 19px; font-weight: 800; }
+
+    /* CARDS */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    label.lbl, .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+
+    /* INPUTS — taille min 44px pour iOS */
+    input[type=text], input[type=number], select, textarea {
+      background: #0a0f1e; border: 1px solid var(--border); border-radius: 12px;
+      padding: 13px 14px; color: var(--text); font-size: 16px; /* 16px évite le zoom iOS */
+      width: 100%; font-family: 'DM Sans', sans-serif; outline: none;
+      min-height: 48px; -webkit-appearance: none; appearance: none;
+    }
+    input:focus, select:focus, textarea:focus { border-color: rgba(245,158,11,0.6); }
+    input[type=number] { font-size: 22px; font-weight: 700; text-align: center; }
+
+    /* BUTTONS — min 48px pour iOS (Apple HIG) */
+    .btn-primary {
+      background: var(--accent); color: #000; border: none; border-radius: 14px;
+      padding: 15px; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%;
+      font-family: 'DM Sans', sans-serif; transition: opacity .15s;
+      min-height: 52px; letter-spacing: 0.2px;
+    }
+    .btn-primary:active { opacity: .8; transform: scale(.98); }
+    .btn-secondary {
+      background: transparent; color: var(--muted); border: 1px solid var(--border);
+      border-radius: 14px; padding: 15px; font-size: 15px; cursor: pointer;
+      font-family: 'DM Sans', sans-serif; min-height: 52px;
+    }
+    .btn-link {
+      background: none; border: 1px solid var(--accent); color: var(--accent);
+      border-radius: 10px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+      font-family: 'DM Sans', sans-serif; min-height: 36px;
+    }
+    .btn-icon {
+      background: none; border: none; font-size: 18px; cursor: pointer;
+      padding: 8px; color: var(--muted); min-width: 44px; min-height: 44px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .btn-export {
+      background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3);
+      color: var(--accent); border-radius: 10px; padding: 8px 14px;
+      font-size: 13px; font-weight: 600; cursor: pointer; min-height: 40px;
+    }
+
+    .empty { color: var(--muted); text-align: center; padding: 32px 0; font-size: 15px; }
+    .hint { font-size: 13px; color: var(--muted); text-align: center; padding: 8px; }
+    .avatar { border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; font-weight: 800; color: #fff; flex-shrink: 0; }
+
+    /* GENDER BTNS */
+    .gender-row { display: flex; gap: 8px; }
+    .g-btn {
+      flex: 1; background: #0a0f1e; border: 1px solid var(--border); border-radius: 12px;
+      padding: 13px; color: var(--muted); font-size: 15px; cursor: pointer;
+      font-family: 'DM Sans', sans-serif; min-height: 48px; font-weight: 600;
+    }
+    .g-btn.male { background: rgba(59,130,246,.12); border-color: var(--male); color: var(--male); }
+    .g-btn.female { background: rgba(236,72,153,.12); border-color: var(--female); color: var(--female); }
+
+    /* MINI TABS */
+    .mini-tabs { display: flex; background: var(--card); border-radius: 12px; padding: 4px; border: 1px solid var(--border); }
+    .mini-tab {
+      flex: 1; background: none; border: none; color: var(--muted); font-size: 12px;
+      font-weight: 700; padding: 9px 4px; border-radius: 9px; cursor: pointer;
+      font-family: 'DM Sans', sans-serif; min-height: 40px;
+    }
+    .mini-tab.active { background: rgba(245,158,11,0.15); color: var(--accent); }
+
+    /* MATCH */
+    .vs-circle { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: #000;
+      display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px; flex-shrink: 0; }
+    .set-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .set-input {
+      flex: 1; background: #0a0f1e; border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 4px; color: var(--text); font-size: 26px; font-weight: 800;
+      text-align: center; min-height: 56px; font-family: 'DM Sans', sans-serif;
+    }
+    .elo-chip { background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3);
+      border-radius: 8px; padding: 5px 10px; font-size: 12px; color: var(--accent); text-align: center; }
+    .score-preview { display: flex; align-items: center; justify-content: center; gap: 8px; padding-top: 10px; }
+    .score-w { font-size: 32px; font-weight: 800; color: var(--green); }
+    .score-l { font-size: 32px; font-weight: 800; color: var(--muted); }
+    .winner-badge { font-size: 14px; color: var(--green); font-weight: 700; margin-left: 6px; }
+
+    /* PLAYERS */
+    .player-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: 64px; }
+
+    /* PLAYER GRID — 3 colonnes, boutons bien tactiles */
+    .player-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .player-grid-btn {
+      background: var(--card); border: 2px solid var(--border); border-radius: 14px;
+      padding: 12px 6px; display: flex; flex-direction: column; align-items: center; gap: 7px;
+      cursor: pointer; transition: transform .1s; font-family: 'DM Sans', sans-serif;
+      min-height: 88px;
+    }
+    .player-grid-btn:active { transform: scale(.93); }
+    .player-grid-btn.selected-p1 { border-color: var(--green); background: rgba(16,185,129,.12); }
+    .player-grid-btn.selected-p2 { border-color: var(--accent); background: rgba(245,158,11,.12); }
+    .player-grid-btn.disabled { opacity: .3; pointer-events: none; }
+    .player-grid-btn .pgname { font-size: 12px; font-weight: 700; color: var(--text); text-align: center; line-height: 1.3; word-break: break-word; }
+    .player-grid-btn .pgelo { font-size: 10px; color: var(--muted); }
+
+    /* RANKING */
+    .rank-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: 64px;
+      animation: slideIn .3s ease backwards; }
+    .rank-card.top3 { border-color: rgba(245,158,11,.35); background: rgba(245,158,11,.04); }
+    @keyframes slideIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+    .chip {
+      background: #0a0f1e; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 20px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+      font-family: 'DM Sans', sans-serif; min-height: 36px; font-weight: 600;
+    }
+    .chip.active { background: rgba(245,158,11,.12); border-color: var(--accent); color: var(--accent); }
+    .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* QR */
+    .qr-box { background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .btn-share { background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3);
+      color: var(--accent); border-radius: 12px; padding: 14px; font-size: 15px;
+      cursor: pointer; width: 100%; font-family: 'DM Sans', sans-serif; min-height: 52px; font-weight: 700; }
+
+    /* SESSION */
+    .session-bar { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);
+      border-radius: 14px; padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+    .session-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+      animation: pulse 1.5s infinite; flex-shrink: 0; }
+    .btn-end-session { background: var(--red); color: #fff; border: none; border-radius: 12px;
+      padding: 10px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+      font-family: 'DM Sans', sans-serif; white-space: nowrap; min-height: 44px; }
+    .session-recap { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+    .session-player-row { display: flex; align-items: center; gap: 10px; padding: 8px 0;
+      border-bottom: 1px solid var(--border); }
+    .session-player-row:last-child { border-bottom: none; }
+
+    /* HISTORY */
+    .hist-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 13px 14px; }
+
+    /* MODAL */
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: flex;
+      align-items: flex-end; justify-content: center; z-index: 200; padding: 0;
+      padding-bottom: var(--safe-bottom); }
+    .modal-box { background: var(--card); border: 1px solid var(--border);
+      border-radius: 20px 20px 0 0; padding: 28px 24px;
+      padding-bottom: calc(28px + var(--safe-bottom));
+      width: 100%; text-align: center; }
+    .modal.hidden { display: none; }
+
+    /* TOAST */
+    .toast { position: fixed; bottom: calc(80px + var(--safe-bottom));
+      left: 50%; transform: translateX(-50%);
+      border-radius: 22px; padding: 12px 22px; font-size: 14px; font-weight: 700;
+      color: #fff; z-index: 300; white-space: nowrap; box-shadow: 0 4px 24px rgba(0,0,0,.6);
+      transition: opacity .3s; pointer-events: none; }
+    .toast.hidden { opacity: 0; }
+
+    /* LOADING */
+    .loading-screen { display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 80vh; gap: 20px; }
+    .spin { animation: spin 1.5s linear infinite; font-size: 52px; display: inline-block; }
+    @keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+
+    /* EDIT INLINE */
+    .edit-form { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+    .mini-select {
+      background: #0a0f1e; border: 1px solid var(--border); border-radius: 10px;
+      padding: 8px 12px; color: var(--text); font-size: 13px;
+      font-family: 'DM Sans', sans-serif; min-height: 38px; -webkit-appearance: none;
+    }
+
+    /* SCROLLING */
+    main { -webkit-overflow-scrolling: touch; }
+    * { -webkit-tap-highlight-color: transparent; }
+  </style>
+
+<script defer>
+// ── JSONBIN API ───────────────────────────────────────────────────────────────
+const BIN_ID  = "69bc8057c3097a1dd53f20db";
+const API_KEY = "$2a$10$XTzK1mpZw16YKGNxiOp3ue/eOxXfkyxefdDl6NFPLfhZVRBPTVVne";
+const BIN_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+let _data = { players:{}, matches:{}, groups:{} };
+
+// ── STATE ────────────────────────────────────────────────────────────────────
+let players = {}, matches = {}, groups = {};
+let currentTab = 'Match';
+let playerSubTab = 'list';
+let rankingGroupFilter = 'all';
+let sets = [{s1:'15',s2:''}];
+let editingPlayerId = null;
+let confirmCallback = null;
+let newPlayerGender = 'M';
+let editPlayerGender = 'M';
+let session = null;
+let matchP1Id = '', matchP2Id = '';
+let importList = [];
+
+async function loadAll() {
+  document.getElementById('loadingStatus').textContent = 'Chargement…';
+  try {
+    const r = await fetch(BIN_URL + '/latest', {
+      headers: { 'X-Master-Key': API_KEY }
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    _data = j.record || { players:{}, matches:{}, groups:{} };
+    players = _data.players || {};
+    matches = _data.matches || {};
+    groups  = _data.groups  || {};
+    document.getElementById('loadingScreen').style.display = 'none';
+    setTab('Match');
+    setInterval(pollData, 30000);
+  } catch(e) {
+    document.getElementById('loadingScreen').innerHTML = `
+      <div style="font-size:48px">⚠️</div>
+      <div style="color:#ef4444;font-weight:700;font-size:16px;text-align:center;padding:0 20px">
+        Impossible de charger les données<br/>${e.message}
+      </div>
+      <button onclick="location.reload()" style="background:#f59e0b;color:#000;border:none;border-radius:12px;
+        padding:13px 24px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:16px">
+        🔄 Réessayer
+      </button>`;
+  }
+}
+
+async function saveAll() {
+  _data = { players, matches, groups };
+  const r = await fetch(BIN_URL, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
+    body: JSON.stringify(_data)
+  });
+  if (!r.ok) throw new Error(`Sauvegarde échouée HTTP ${r.status}`);
+}
+
+async function pollData() {
+  try {
+    const r = await fetch(BIN_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
+    if (!r.ok) return;
+    const j = await r.json();
+    const d = j.record || {};
+    players = d.players || {};
+    matches = d.matches || {};
+    groups  = d.groups  || {};
+    if (currentTab === 'Match')   renderMatchTab();
+    if (currentTab === 'Players') renderPlayers();
+    if (currentTab === 'Ranking') renderRanking();
+    if (currentTab === 'History') renderHistory();
+  } catch(e) { console.warn('Poll error', e); }
+}
+
+// Génère un ID unique simple
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+// Helpers CRUD locaux + sync
+async function fbGet(path) {
+  const keys = path.split('/').filter(Boolean);
+  let obj = _data;
+  for (const k of keys) obj = (obj||{})[k];
+  return obj || null;
+}
+async function fbSet(path, val) {
+  setNested(_data, path, val);
+}
+async function fbUpdate(path, val) {
+  const cur = await fbGet(path) || {};
+  setNested(_data, path, typeof cur === 'object' ? {...cur, ...val} : val);
+}
+async function fbDelete(path) {
+  deleteNested(_data, path);
+}
+async function fbPush(path, val) {
+  const id = uid();
+  const cur = (await fbGet(path)) || {};
+  setNested(_data, path, {...cur, [id]: {...val, id}});
+  return id;
+}
+
+function setNested(obj, path, val) {
+  const keys = path.split('/').filter(Boolean);
+  let cur = obj;
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (!cur[keys[i]]) cur[keys[i]] = {};
+    cur = cur[keys[i]];
+  }
+  cur[keys[keys.length-1]] = val;
+}
+function deleteNested(obj, path) {
+  const keys = path.split('/').filter(Boolean);
+  let cur = obj;
+  for (let i = 0; i < keys.length - 1; i++) cur = (cur||{})[keys[i]];
+  if (cur) delete cur[keys[keys.length-1]];
+}
+
+function setSyncing(on) {
+  const dot = document.getElementById('syncDot');
+  if (dot) dot.classList.toggle('syncing', on);
+}
+
+async function run(fn, msg) {
+  setSyncing(true);
+  try {
+    // 1. Modifier _data localement (synchrone)
+    await fn();
+    // 2. Mettre à jour les variables d'état
+    players = _data.players || {};
+    matches = _data.matches || {};
+    groups  = _data.groups  || {};
+    // 3. Rafraîchir l'UI immédiatement sans attendre la sauvegarde
+    if (currentTab === 'Match')   renderMatchTab();
+    if (currentTab === 'Players') renderPlayers();
+    if (currentTab === 'Ranking') renderRanking();
+    if (currentTab === 'History') renderHistory();
+    if (msg) showToast(msg);
+    setSyncing(false);
+    // 4. Sauvegarder en arrière-plan (ne bloque plus l'UI)
+    saveAll().catch(e => showToast('Sync échouée : ' + e.message, 'err'));
+  } catch(e) {
+    setSyncing(false);
+    showToast('Erreur : ' + e.message, 'err');
+  }
+}
+
+loadAll();
+// ── ELO ──────────────────────────────────────────────────────────────────────
+function expectedScore(rA, rB) { return 1/(1+Math.pow(10,(rB-rA)/400)); }
+function computeElo(winner, loser, loserSets) {
+  const eW = expectedScore(winner.elo, loser.elo);
+  const eL = expectedScore(loser.elo, winner.elo);
+  const diff = Math.abs(winner.elo - loser.elo);
+  let k = diff > 400 ? 64 : diff > 200 ? 48 : 32;
+  let gBonus = (winner.gender==='F' && loser.gender==='M') ? (winner.elo < loser.elo ? 16 : 8) : 0;
+  const dom = loserSets === 0 ? 1.1 : 1.0;
+  const nW = Math.round(winner.elo + (k*(1-eW)+gBonus)*dom);
+  const nL = Math.round(loser.elo + k*(0-eL) - gBonus*0.5);
+  return {nW, nL, dW:nW-winner.elo, dL:nL-loser.elo};
+}
+
+// ── SESSION ───────────────────────────────────────────────────────────────────
+function startSession() {
+  session = { startTime: new Date().toISOString(), matchIds: [], playerMatchCount: {} };
+  updateSessionBar();
+  showToast('Séance démarrée !');
+}
+window.startSession = startSession;
+
+function updateSessionBar() {
+  const bar = document.getElementById('sessionBar');
+  const noBar = document.getElementById('noSessionBar');
+  if (!bar || !noBar) return;
+  if (session) {
+    bar.style.display = 'flex';
+    noBar.style.display = 'none';
+    const total = session.matchIds.length;
+    const players_count = Object.keys(session.playerMatchCount).length;
+    document.getElementById('sessionInfo').textContent =
+      `${total} match${total>1?'s':''} · ${players_count} joueur${players_count>1?'s':''}`;
+  } else {
+    bar.style.display = 'none';
+    noBar.style.display = 'flex';
+  }
+}
+
+function trackMatchInSession(matchId, winnerId, loserId) {
+  if (!session) return;
+  session.matchIds.push(matchId);
+  session.playerMatchCount[winnerId] = (session.playerMatchCount[winnerId] || 0) + 1;
+  session.playerMatchCount[loserId] = (session.playerMatchCount[loserId] || 0) + 1;
+  updateSessionBar();
+}
+
+function confirmEndSession() {
+  if (!session || session.matchIds.length === 0) {
+    showToast('Aucun match dans cette séance', 'err'); return;
+  }
+  // Calcul du récap avant affichage
+  const recap = computeSessionRecap();
+  const rows = recap.map(r => `
+    <div class="session-player-row">
+      <div class="avatar" style="width:36px;height:36px;font-size:14px;background:${r.gender==='F'?'var(--female)':'var(--male)'}">
+        ${r.name[0].toUpperCase()}
+      </div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:700">${r.name}</div>
+        <div style="font-size:11px;color:var(--muted)">${r.matchCount} match${r.matchCount>1?'s':''} · coeff. ${r.coeff.toFixed(2)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:15px;font-weight:800;color:${r.eloAdjust>=0?'var(--green)':'var(--red)'}">
+          ${r.eloAdjust>=0?'+':''}${r.eloAdjust}
+        </div>
+        <div style="font-size:10px;color:var(--muted)">ajustement</div>
+      </div>
+    </div>`).join('');
+
+  showModal(`
+    <div style="font-size:28px;margin-bottom:8px">🏁</div>
+    <div style="font-weight:800;font-size:17px;margin-bottom:4px">Fin de séance</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">
+      Ajustement ELO selon l'activité — le joueur le plus actif garde ses points intacts
+    </div>
+    <div class="session-recap" style="text-align:left;margin-bottom:16px;max-height:40vh;overflow-y:auto">${rows}</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" style="flex:1" onclick="applyEndSession()">✅ Valider</button>
+      <button class="btn-secondary" style="flex:1" onclick="closeModal()">Annuler</button>
+    </div>`, null);
+}
+window.confirmEndSession = confirmEndSession;
+
+function computeSessionRecap() {
+  if (!session) return [];
+  const counts = session.playerMatchCount;
+  const maxMatches = Math.max(...Object.values(counts));
+  return Object.entries(counts).map(([id, matchCount]) => {
+    const p = players[id];
+    if (!p) return null;
+    const coeff = matchCount / maxMatches; // 0 < coeff <= 1
+    // Recalcul: on retrouve les deltas de la séance pour ce joueur
+    const sessionMatches = session.matchIds.map(mid => matches[mid]).filter(m => m && (m.winnerId===id || m.loserId===id));
+    let rawDelta = 0;
+    sessionMatches.forEach(m => {
+      if (m.winnerId === id) rawDelta += m.winnerDelta;
+      else rawDelta += m.loserDelta;
+    });
+    // Delta ajusté = rawDelta * coeff (si positif) ou rawDelta / coeff (si négatif = pénalité plus grande)
+    const adjustedDelta = rawDelta >= 0
+      ? Math.round(rawDelta * coeff)
+      : Math.round(rawDelta / coeff); // perd davantage s'il a peu joué
+    const eloAdjust = adjustedDelta - rawDelta; // correction à appliquer
+    return { id, name: p.name, gender: p.gender, matchCount, coeff, rawDelta, adjustedDelta, eloAdjust };
+  }).filter(Boolean).sort((a,b) => b.matchCount - a.matchCount);
+}
+
+function applyEndSession() {
+  closeModal();
+  const recap = computeSessionRecap();
+  if (recap.length === 0) return;
+  setSyncing(true);
+  const updates = {};
+  recap.forEach(r => {
+    if (r.eloAdjust !== 0) {
+      const newElo = Math.max(100, (players[r.id]?.elo || 1000) + r.eloAdjust);
+      updates[`players/${r.id}/elo`] = newElo;
+    }
+  });
+  // Enregistrer la séance
+  run(async () => {
+    for (const [path, val] of Object.entries(updates)) {
+      if (val === null) await fbDelete(path);
+      else await fbUpdate(path, typeof val === 'object' ? val : {});
+    }
+    const sKey = await fbPush('sessions', {
+      date: new Date().toISOString(),
+      matchIds: session.matchIds,
+      recap: recap.map(r => ({id:r.id, name:r.name, matchCount:r.matchCount, coeff:r.coeff, eloAdjust:r.eloAdjust}))
+    });
+    session = null;
+    updateSessionBar();
+  }, 'Séance clôturée et classement ajusté !');
+}
+window.applyEndSession = applyEndSession;
+
+
+function objArr(obj) { return obj ? Object.entries(obj).map(([id,v])=>({...v,id})) : []; }
+function sortedPlayers() { return objArr(players).sort((a,b)=>b.elo-a.elo); }
+function getPlayerGroup(id) { return objArr(groups).find(g=>(g.playerIds||[]).includes(id)); }
+
+function setSyncing(on) {
+  const dot = document.getElementById('syncDot');
+  dot.classList.toggle('syncing', on);
+}
+
+let toastTimer;
+function showToast(msg, type='ok') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = type==='err' ? 'var(--red)' : 'var(--green)';
+  t.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.add('hidden'), 3000);
+}
+
+function showModal(html, onConfirm) {
+  document.getElementById('modalBox').innerHTML = html;
+  document.getElementById('modal').classList.remove('hidden');
+  confirmCallback = onConfirm;
+}
+function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+window.closeModal = closeModal;
+window.doConfirm = function() { if(confirmCallback) confirmCallback(); closeModal(); }
+
+// ── TABS ──────────────────────────────────────────────────────────────────────
+function setTab(name) {
+  currentTab = name;
+  ['Match','Players','Ranking','History'].forEach(t => {
+    document.getElementById('tab'+t).style.display = 'none';
+    document.getElementById('nav'+t).classList.remove('active');
+  });
+  document.getElementById('tab'+name).style.display = 'flex';
+  document.getElementById('nav'+name).classList.add('active');
+  if (name==='Match') renderMatchTab();
+  if (name==='Players') renderPlayers();
+  if (name==='Ranking') renderRanking();
+  if (name==='History') renderHistory();
+}
+window.setTab = setTab;
+
+// ── MATCH TAB ────────────────────────────────────────────────────────────────
+function renderMatchTab() {
+  const pArr = objArr(players);
+  const gArr = objArr(groups);
+
+  // Lire la valeur AVANT de réécrire le select
+  const filterSel = document.getElementById('matchGroupFilter');
+  const curFilter = (filterSel ? filterSel.value : '') || 'all';
+
+  if (filterSel) {
+    // Si des groupes existent, pas d'option "Tous" — on force la sélection d'un groupe
+    if (gArr.length > 0) {
+      filterSel.style.display = 'block';
+      filterSel.innerHTML = gArr.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
+      // Si la valeur courante n'existe plus, prendre le premier groupe
+      const validFilter = gArr.find(g => g.id === curFilter) ? curFilter : gArr[0].id;
+      filterSel.value = validFilter;
+    } else {
+      // Pas de groupes → cacher le filtre
+      filterSel.style.display = 'none';
+      filterSel.innerHTML = '<option value="all">Tous</option>';
+      filterSel.value = 'all';
+    }
+  }
+
+  const activeFilter = filterSel ? filterSel.value : 'all';
+  const visible = (activeFilter === 'all' || !activeFilter) ? pArr
+    : pArr.filter(p=>(groups[activeFilter]?.playerIds||[]).includes(p.id));
+
+  document.getElementById('matchHint').style.display = pArr.length < 2 ? 'block' : 'none';
+  updateSessionBar();
+
+  renderPlayerGrid(visible);
+  updateBanner();
+  updateMatchFormVisibility();
+}
+window.renderMatchTab = renderMatchTab;
+
+function renderPlayerGrid(pArr) {
+  const grid = document.getElementById('playerGrid');
+  const label = document.getElementById('pickingLabel');
+  if (!grid) return;
+
+  // Sorted by ELO
+  const sorted = [...pArr].sort((a,b) => b.elo - a.elo);
+
+  if (sorted.length === 0) {
+    grid.innerHTML = '<div class="empty">Aucun joueur disponible</div>';
+    return;
+  }
+
+  // Update label
+  if (label) {
+    if (!matchP1Id) label.textContent = '👆 Sélectionnez le Joueur 1';
+    else if (!matchP2Id) label.textContent = '👆 Sélectionnez le Joueur 2';
+    else label.textContent = '✓ Les deux joueurs sont sélectionnés';
+  }
+
+  grid.className = 'player-grid';
+  grid.innerHTML = sorted.map(p => {
+    let cls = 'player-grid-btn';
+    if (p.id === matchP1Id) cls += ' selected-p1';
+    else if (p.id === matchP2Id) cls += ' selected-p2';
+    else if ((matchP1Id && matchP2Id)) cls += ' disabled';
+    const avatarBg = p.gender==='F' ? 'var(--female)' : 'var(--male)';
+    const badge = p.id===matchP1Id ? '✓1' : p.id===matchP2Id ? '✓2' : '';
+    return `
+      <button class="${cls}" onclick="selectPlayer('${p.id}')">
+        <div class="avatar" style="width:38px;height:38px;font-size:16px;background:${avatarBg};position:relative">
+          ${badge ? `<span style="position:absolute;top:-4px;right:-4px;background:${p.id===matchP1Id?'var(--green)':'var(--accent)'};color:#000;border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center">${badge}</span>` : ''}
+          ${p.name[0].toUpperCase()}
+        </div>
+        <span class="pgname">${p.name}</span>
+        <span class="pgelo">${p.elo} pts</span>
+      </button>`;
+  }).join('');
+}
+
+function selectPlayer(id) {
+  if (!matchP1Id) {
+    matchP1Id = id;
+  } else if (!matchP2Id && id !== matchP1Id) {
+    matchP2Id = id;
+  } else if (id === matchP1Id) {
+    matchP1Id = '';
+  } else if (id === matchP2Id) {
+    matchP2Id = '';
+  }
+  updateBanner();
+  updateMatchFormVisibility();
+  const pArr = objArr(players);
+  const filterSel = document.getElementById('matchGroupFilter');
+  const curFilter = filterSel ? filterSel.value || 'all' : 'all';
+  const gArr = objArr(groups);
+  const visible = curFilter==='all' ? pArr : pArr.filter(p=>(gArr.find(g=>g.id===curFilter)?.playerIds||[]).includes(p.id));
+  renderPlayerGrid(visible);
+}
+window.selectPlayer = selectPlayer;
+
+function clearPlayer(num) {
+  if (num === 1) matchP1Id = '';
+  else matchP2Id = '';
+  const pArr = objArr(players);
+  const filterSel = document.getElementById('matchGroupFilter');
+  const curFilter = filterSel ? filterSel.value || 'all' : 'all';
+  const gArr = objArr(groups);
+  const visible = curFilter==='all' ? pArr : pArr.filter(p=>(gArr.find(g=>g.id===curFilter)?.playerIds||[]).includes(p.id));
+  renderPlayerGrid(visible);
+  updateBanner();
+  updateMatchFormVisibility();
+}
+window.clearPlayer = clearPlayer;
+
+function updateBanner() {
+  const banner = document.getElementById('selectedBanner');
+  const picker = document.getElementById('playerPickerSection');
+  const pl1 = players[matchP1Id], pl2 = players[matchP2Id];
+
+  if (matchP1Id || matchP2Id) {
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+
+  // P1
+  const a1 = document.getElementById('bannerP1Avatar');
+  const n1 = document.getElementById('bannerP1Name');
+  const e1 = document.getElementById('bannerP1Elo');
+  if (pl1) {
+    a1.style.background = pl1.gender==='F' ? 'var(--female)' : 'var(--male)';
+    a1.textContent = pl1.name[0].toUpperCase();
+    n1.style.color = 'var(--green)'; n1.textContent = pl1.name;
+    e1.textContent = pl1.elo + ' pts';
+  } else {
+    a1.style.background = 'var(--muted)'; a1.textContent = '?';
+    n1.style.color = 'var(--muted)'; n1.textContent = 'Joueur 1';
+    e1.textContent = '';
+  }
+
+  // P2
+  const a2 = document.getElementById('bannerP2Avatar');
+  const n2 = document.getElementById('bannerP2Name');
+  const e2 = document.getElementById('bannerP2Elo');
+  if (pl2) {
+    a2.style.background = pl2.gender==='F' ? 'var(--female)' : 'var(--male)';
+    a2.textContent = pl2.name[0].toUpperCase();
+    n2.style.color = 'var(--accent)'; n2.textContent = pl2.name;
+    e2.textContent = pl2.elo + ' pts';
+  } else {
+    a2.style.background = 'var(--muted)'; a2.textContent = '?';
+    n2.style.color = 'var(--muted)'; n2.textContent = 'Joueur 2';
+    e2.textContent = '';
+  }
+}
+
+function updateMatchFormVisibility() {
+  const form = document.getElementById('matchFormSection');
+  const picker = document.getElementById('playerPickerSection');
+  const bothSelected = matchP1Id && matchP2Id;
+
+  // Masquer la grille quand les 2 joueurs sont sélectionnés
+  picker.style.display = bothSelected ? 'none' : 'block';
+
+  if (bothSelected) {
+    form.style.display = 'flex';
+    renderSets();
+    updateMatchPreview();
+  } else {
+    form.style.display = 'none';
+  }
+}
+
+
+
+function renderSets() {
+  const c = document.getElementById('setsContainer');
+  c.innerHTML = sets.map((s,i)=>`
+    <div class="set-row">
+      <span style="font-size:11px;color:var(--muted);width:36px">Set ${i+1}</span>
+      <input class="set-input" type="number" min="0" max="30" value="${s.s1}"
+        oninput="sets[${i}].s1=this.value;updateMatchPreview()"/>
+      <span style="color:var(--muted);font-size:18px">–</span>
+      <input class="set-input" type="number" min="0" max="30" value="${s.s2}"
+        oninput="sets[${i}].s2=this.value;updateMatchPreview()"/>
+      ${sets.length>1?`<button class="btn-icon" onclick="removeSet(${i})">✕</button>`:''}
+    </div>`).join('');
+}
+
+function addSet() { if(sets.length<3){sets.push({s1:'15',s2:''});renderSets();updateMatchPreview();} }
+window.addSet = addSet;
+function removeSet(i) { sets.splice(i,1); renderSets(); updateMatchPreview(); }
+window.removeSet = removeSet;
+
+function getSetsScore() {
+  let w1=0,w2=0;
+  sets.forEach(s=>{const a=parseInt(s.s1),b=parseInt(s.s2);if(!isNaN(a)&&!isNaN(b)){if(a>b)w1++;else if(b>a)w2++;}});
+  return {w1,w2};
+}
+
+function updateMatchPreview() {
+  const pl1 = players[matchP1Id], pl2 = players[matchP2Id];
+  const {w1,w2} = getSetsScore();
+  const prev = document.getElementById('scorePreview');
+  if(w1>0||w2>0){
+    prev.style.display='flex';
+    const winnerName = w1>w2?(pl1?.name||'J1'):w2>w1?(pl2?.name||'J2'):'';
+    prev.innerHTML=`
+      <span class="${w1>w2?'score-w':'score-l'}">${w1}</span>
+      <span style="color:var(--muted);font-size:18px;margin:0 6px">–</span>
+      <span class="${w2>w1?'score-w':'score-l'}">${w2}</span>
+      ${w1!==w2?`<span class="winner-badge">✓ ${winnerName}</span>`:''}`;
+  } else { prev.style.display='none'; }
+}
+window.updateMatchPreview = updateMatchPreview;
+
+function submitMatch() {
+  if(!matchP1Id||!matchP2Id){showToast('Sélectionnez 2 joueurs','err');return;}
+  const {w1,w2} = getSetsScore();
+  if(w1===w2){showToast('Il faut un vainqueur !','err');return;}
+  const winnerId = w1>w2?matchP1Id:matchP2Id, loserId = w1>w2?matchP2Id:matchP1Id;
+  const winner=players[winnerId], loser=players[loserId];
+  const {nW,nL,dW,dL} = computeElo(winner, loser, Math.min(w1,w2));
+  setSyncing(true);
+  const updates = {};
+  updates[`players/${winnerId}/elo`] = nW;
+  updates[`players/${winnerId}/wins`] = (winner.wins||0)+1;
+  updates[`players/${winnerId}/played`] = (winner.played||0)+1;
+  updates[`players/${loserId}/elo`] = nL;
+  updates[`players/${loserId}/losses`] = (loser.losses||0)+1;
+  updates[`players/${loserId}/played`] = (loser.played||0)+1;
+  run(async () => {
+    await fbUpdate(`players/${winnerId}`, {elo:nW, wins:(winner.wins||0)+1, played:(winner.played||0)+1});
+    await fbUpdate(`players/${loserId}`, {elo:nL, losses:(loser.losses||0)+1, played:(loser.played||0)+1});
+    const mKey = await fbPush('matches', {winnerId,loserId,winnerSets:Math.max(w1,w2),loserSets:Math.min(w1,w2),sets:[...sets],winnerDelta:dW,loserDelta:dL,date:new Date().toISOString()});
+    trackMatchInSession(mKey, winnerId, loserId);
+    sets=[{s1:'15',s2:''}];
+    matchP1Id=''; matchP2Id='';
+    renderSets(); updateMatchPreview();
+    updateBanner(); updateMatchFormVisibility();
+    const btn=document.getElementById('submitMatchBtn');
+    btn.textContent='✓ Match enregistré !'; btn.style.background='var(--green)';
+    setTimeout(()=>{btn.textContent='Valider le match';btn.style.background='';},2500);
+  }, `+${dW} pts pour ${winner.name} !`);
+}
+window.submitMatch = submitMatch;
+
+// ── PLAYERS TAB ───────────────────────────────────────────────────────────────
+function setPlayerSubTab(t) {
+  playerSubTab=t;
+  document.getElementById('ptabList').classList.toggle('active',t==='list');
+  document.getElementById('ptabGroups').classList.toggle('active',t==='groups');
+  document.getElementById('ptabImport').classList.toggle('active',t==='import');
+  document.getElementById('playerListSection').style.display=t==='list'?'flex':'none';
+  document.getElementById('playerGroupsSection').style.display=t==='groups'?'flex':'none';
+  document.getElementById('playerImportSection').style.display=t==='import'?'flex':'none';
+  if(t==='list') renderPlayerList();
+  if(t==='groups') renderPlayerGroups();
+  if(t==='import') renderImport();
+}
+window.setPlayerSubTab = setPlayerSubTab;
+
+function renderPlayers() {
+  if(playerSubTab==='list') renderPlayerList();
+  else if(playerSubTab==='groups') renderPlayerGroups();
+  else if(playerSubTab==='import') renderImport();
+}
+
+function setNewGender(g) {
+  newPlayerGender=g;
+  document.getElementById('gBtnM').className='g-btn'+(g==='M'?' male':'');
+  document.getElementById('gBtnF').className='g-btn'+(g==='F'?' female':'');
+}
+window.setNewGender = setNewGender;
+
+function renderPlayerList() {
+  const sec = document.getElementById('playerListSection');
+  const search = document.getElementById('playerSearch')?.value||'';
+  const pArr = sortedPlayers().filter(p=>p.name.toLowerCase().includes(search.toLowerCase()));
+
+  sec.innerHTML = `
+    <div class="card">
+      <input type="text" id="newPlayerName" placeholder="Nom de l'étudiant" onkeydown="if(event.key==='Enter')addPlayer()"/>
+      <div class="gender-row">
+        <button class="g-btn male" id="gBtnM" onclick="setNewGender('M')">♂ Homme</button>
+        <button class="g-btn" id="gBtnF" onclick="setNewGender('F')">♀ Femme</button>
+      </div>
+      <button class="btn-primary" onclick="addPlayer()">Ajouter</button>
+    </div>
+    <input type="text" id="playerSearch" placeholder="🔍 Rechercher…" value="${search}" oninput="renderPlayerList()" style="background:#0a0f1e;border:1px solid var(--border);border-radius:10px;padding:11px 13px;color:var(--text);font-size:14px;width:100%;font-family:'DM Sans',sans-serif;outline:none"/>
+    ${pArr.length===0?'<div class="empty">Aucun joueur</div>':''}
+    ${pArr.map(p => {
+      const grp=getPlayerGroup(p.id);
+      if(editingPlayerId===p.id) return `
+        <div class="player-card">
+          <div class="edit-form">
+            <input type="text" id="editName" value="${p.name}"/>
+            <div class="gender-row">
+              <button class="g-btn ${editPlayerGender==='M'?'male':''}" id="eBtnM" onclick="setEditGender('M')">♂</button>
+              <button class="g-btn ${editPlayerGender==='F'?'female':''}" id="eBtnF" onclick="setEditGender('F')">♀</button>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn-primary" style="padding:8px;flex:1" onclick="saveEdit('${p.id}')">✓ Sauver</button>
+              <button class="btn-secondary" style="padding:8px;flex:1" onclick="cancelEdit()">Annuler</button>
+            </div>
+          </div>
+        </div>`;
+      return `
+        <div class="player-card">
+          <div class="avatar" style="background:${p.gender==='F'?'var(--female)':'var(--male)'}">
+            ${p.name[0].toUpperCase()}
+          </div>
+          <div style="flex:1">
+            <div style="font-size:15px;font-weight:600">${p.name}</div>
+            <div style="font-size:11px;color:var(--muted)">${p.gender==='F'?'♀':'♂'} · ${p.played||0} matchs${grp?` · <span style="color:var(--accent)">${grp.name}</span>`:''}</div>
+          </div>
+          <div style="font-size:17px;font-weight:700;color:var(--accent);margin-right:4px">${p.elo}</div>
+          <button class="btn-icon" onclick="startEdit('${p.id}','${p.gender}')">✏️</button>
+          <button class="btn-icon" onclick="confirmDeletePlayer('${p.id}','${p.name}')">🗑️</button>
+        </div>`;
+    }).join('')}`;
+  sec.style.display='flex'; sec.style.flexDirection='column'; sec.style.gap='10px';
+  setNewGender(newPlayerGender);
+}
+
+function renderPlayerGroups() {
+  const sec = document.getElementById('playerGroupsSection');
+  const gArr = objArr(groups);
+  const pArr = objArr(players);
+  sec.innerHTML = `
+    <div class="card">
+      <input type="text" id="newGroupName" placeholder="Nom du groupe (ex : Groupe A)"/>
+      <button class="btn-primary" onclick="addGroup()">Créer le groupe</button>
+    </div>
+    ${gArr.length===0?'<div class="empty">Aucun groupe créé</div>':''}
+    ${gArr.map(g=>`
+      <div class="card">
+        <div class="row">
+          <span style="font-weight:700">${g.name} <span style="font-size:11px;color:var(--muted)">(${(g.playerIds||[]).length}/${pArr.length})</span></span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="btn-link" style="font-size:11px;padding:5px 10px" onclick="selectAllGroup('${g.id}')">✅ Tous</button>
+            <button class="btn-link" style="font-size:11px;padding:5px 10px;border-color:var(--muted);color:var(--muted)" onclick="deselectAllGroup('${g.id}')">☐ Aucun</button>
+            <button class="btn-icon" onclick="confirmDeleteGroup('${g.id}','${g.name}')">🗑️</button>
+          </div>
+        </div>
+        ${pArr.map(p=>{
+          const inG=(g.playerIds||[]).includes(p.id);
+          return `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 0;border-bottom:1px solid var(--border)">
+            <input type="checkbox" ${inG?'checked':''} onchange="toggleGroup('${p.id}','${g.id}',this.checked)"
+              style="accent-color:var(--accent);width:18px;height:18px;flex-shrink:0"/>
+            <div class="avatar" style="width:30px;height:30px;font-size:12px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
+              ${p.name[0].toUpperCase()}
+            </div>
+            <span style="font-size:14px;font-weight:${inG?'600':'400'};color:${inG?'var(--text)':'var(--muted)'};flex:1">${p.name}</span>
+            <span style="font-size:12px;color:var(--accent)">${p.elo}</span>
+          </label>`;
+        }).join('')}
+      </div>`).join('')}`;
+  sec.style.display='flex'; sec.style.flexDirection='column'; sec.style.gap='10px';
+}
+
+function addPlayer() {
+  const name = document.getElementById('newPlayerName')?.value?.trim();
+  if(!name) return;
+  setSyncing(true);
+  run(async () => {
+    const key = await fbPush('players', {name, gender:newPlayerGender, elo:1000, wins:0, losses:0, played:0});
+    await fbUpdate(`players/${key}`, {id:key});
+  }, `${name} ajouté·e !`);
+}
+window.addPlayer = addPlayer;
+
+function startEdit(id, gender) { editingPlayerId=id; editPlayerGender=gender; renderPlayerList(); }
+window.startEdit = startEdit;
+function cancelEdit() { editingPlayerId=null; renderPlayerList(); }
+window.cancelEdit = cancelEdit;
+function setEditGender(g) {
+  editPlayerGender=g;
+  document.getElementById('eBtnM').className='g-btn'+(g==='M'?' male':'');
+  document.getElementById('eBtnF').className='g-btn'+(g==='F'?' female':'');
+}
+window.setEditGender = setEditGender;
+function saveEdit(id) {
+  const name=document.getElementById('editName')?.value?.trim();
+  if(!name)return;
+  setSyncing(true);
+  run(async () => {
+    await fbUpdate(`players/${id}`, {name, gender:editPlayerGender});
+    editingPlayerId=null;
+  }, 'Joueur mis à jour');
+}
+window.saveEdit = saveEdit;
+
+function confirmDeletePlayer(id, name) {
+  showModal(`<div style="font-size:32px;margin-bottom:8px">🗑️</div>
+    <div style="font-weight:700;margin-bottom:4px">Supprimer ${name} ?</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Cette action est irréversible.</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" style="background:var(--red);flex:1" onclick="doConfirm()">Supprimer</button>
+      <button class="btn-secondary" style="flex:1" onclick="closeModal()">Annuler</button>
+    </div>`, ()=>{
+    setSyncing(true);
+    const updates={};
+    updates[`players/${id}`]=null;
+    objArr(groups).forEach(g=>{
+      if((g.playerIds||[]).includes(id))
+        updates[`groups/${g.id}/playerIds`]=(g.playerIds||[]).filter(x=>x!==id);
+    });
+    run(async () => {
+      await fbDelete(`players/${id}`);
+      for (const g of objArr(groups)) {
+        if ((g.playerIds||[]).includes(id))
+          await fbUpdate(`groups/${g.id}`, {playerIds:(g.playerIds||[]).filter(x=>x!==id)});
+      }
+    }, 'Joueur supprimé');
+  });
+}
+window.confirmDeletePlayer = confirmDeletePlayer;
+
+function addGroup() {
+  const name=document.getElementById('newGroupName')?.value?.trim();
+  if(!name)return;
+  setSyncing(true);
+  run(async () => {
+    const key = await fbPush('groups', {name, playerIds:[]});
+    await fbUpdate(`groups/${key}`, {id:key});
+  }, `Groupe "${name}" créé`);
+}
+window.addGroup = addGroup;
+
+function confirmDeleteGroup(id, name) {
+  showModal(`<div style="font-size:32px;margin-bottom:8px">🗑️</div>
+    <div style="font-weight:700;margin-bottom:16px">Supprimer le groupe "${name}" ?</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" style="background:var(--red);flex:1" onclick="doConfirm()">Supprimer</button>
+      <button class="btn-secondary" style="flex:1" onclick="closeModal()">Annuler</button>
+    </div>`, ()=>{
+    setSyncing(true);
+    run(() => fbDelete(`groups/${id}`), 'Groupe supprimé');
+  });
+}
+window.confirmDeleteGroup = confirmDeleteGroup;
+
+function selectAllGroup(groupId) {
+  const allIds = objArr(players).map(p => p.id);
+  setSyncing(true);
+  run(() => fbUpdate(`groups/${groupId}`, {playerIds:allIds}), 'Tous les joueurs ajoutés !');
+}
+window.selectAllGroup = selectAllGroup;
+
+function deselectAllGroup(groupId) {
+  setSyncing(true);
+  run(() => fbUpdate(`groups/${groupId}`, {playerIds:[]}), 'Groupe vidé');
+}
+window.deselectAllGroup = deselectAllGroup;
+
+
+function toggleGroup(playerId, groupId, checked) {
+  const g=groups[groupId]; if(!g)return;
+  const ids=(g.playerIds||[]);
+  const newIds=checked?[...new Set([...ids,playerId])]:ids.filter(x=>x!==playerId);
+  run(() => fbUpdate(`groups/${groupId}`, {playerIds:newIds}));
+}
+window.toggleGroup = toggleGroup;
+
+// ── RANKING TAB ───────────────────────────────────────────────────────────────
+function renderRanking() {
+  const gArr=objArr(groups);
+  const pArr=sortedPlayers();
+  const filtered=rankingGroupFilter==='all'?pArr:pArr.filter(p=>(gArr.find(g=>g.id===rankingGroupFilter)?.playerIds||[]).includes(p.id));
+  const medals=['🥇','🥈','🥉'];
+
+  const filtersEl=document.getElementById('rankingFilters');
+  filtersEl.innerHTML=`<button class="chip ${rankingGroupFilter==='all'?'active':''}" onclick="setRankFilter('all')">Tous</button>`
+    +gArr.map(g=>`<button class="chip ${rankingGroupFilter===g.id?'active':''}" onclick="setRankFilter('${g.id}')">${g.name}</button>`).join('');
+
+  const listEl=document.getElementById('rankingList');
+  listEl.style.display='flex'; listEl.style.flexDirection='column'; listEl.style.gap='8px';
+  listEl.innerHTML=filtered.length===0?'<div class="empty">Aucun joueur</div>':
+    filtered.map((p,i)=>{
+      const wr=p.played?Math.round(p.wins/p.played*100):0;
+      return `<div class="rank-card ${i<3?'top3':''}" style="animation-delay:${i*40}ms">
+        <div style="width:32px;text-align:center;font-size:${i<3?'22':'13'}px;color:${i>=3?'var(--muted)':'inherit'}">${medals[i]||'#'+(i+1)}</div>
+        <div class="avatar" style="width:42px;height:42px;font-size:18px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
+          ${p.name[0].toUpperCase()}
+        </div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:15px">${p.name}</div>
+          <div style="font-size:11px;color:var(--muted)">${p.wins||0}V – ${p.losses||0}D · ${wr}% win</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:22px;font-weight:800;color:var(--accent)">${p.elo}</div>
+          <div style="font-size:10px;color:var(--muted)">pts</div>
+        </div>
+      </div>`;
+    }).join('');
+
+  const pageUrl = "https://tribet31.github.io/BadmintonStaps31/classement.html";
+  const qr=`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(pageUrl)}`;
+  document.getElementById('qrBox').innerHTML=`
+    <div style="font-weight:700;font-size:15px">📱 Page publique étudiants</div>
+    <div style="font-size:12px;color:var(--muted);text-align:center">Scannez ce QR code pour voir le classement en direct</div>
+    <img src="${qr}" style="border-radius:10px;border:3px solid var(--accent);width:180px;height:180px"/>
+    <button class="btn-share" onclick="navigator.clipboard?.writeText('${pageUrl}');showToast('Lien copié !')">📋 Copier le lien</button>`;
+}
+
+function setRankFilter(id) { rankingGroupFilter=id; renderRanking(); }
+window.setRankFilter = setRankFilter;
+window.showToast = showToast;
+
+function exportCSV() {
+  const pArr=sortedPlayers();
+  const gArr=objArr(groups);
+  const getGrp=p=>gArr.find(g=>(g.playerIds||[]).includes(p.id))?.name||'—';
+  const rows=[['Rang','Nom','Genre','Groupe','ELO','V','D','Matchs','Win%'],
+    ...pArr.map((p,i)=>[i+1,p.name,p.gender==='F'?'Femme':'Homme',getGrp(p),p.elo,p.wins||0,p.losses||0,p.played||0,p.played?Math.round(p.wins/p.played*100)+'%':'0%'])];
+  const blob=new Blob(['\uFEFF'+rows.map(r=>r.join(';')).join('\n')],{type:'text/csv;charset=utf-8;'});
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:'classement.csv'});
+  a.click();
+}
+window.exportCSV = exportCSV;
+
+// ── IMPORT TAB ────────────────────────────────────────────────────────────────
+
+function renderImport() {
+  const sec = document.getElementById('playerImportSection');
+  sec.style.display = 'flex'; sec.style.flexDirection = 'column'; sec.style.gap = '12px';
+  sec.innerHTML = `
+    <div class="card">
+      <span class="lbl">Coller une liste de prénoms</span>
+      <textarea id="importTextarea" placeholder="Un prénom par ligne :&#10;Alice&#10;Bob&#10;Marie&#10;Thomas…"
+        style="background:#0a0f1e;border:1px solid var(--border);border-radius:10px;padding:12px;
+               color:var(--text);font-size:14px;width:100%;font-family:'DM Sans',sans-serif;
+               outline:none;resize:vertical;min-height:120px;line-height:1.6"
+        oninput="parseImport()">${importList.map(p=>p.name).join('\n')}</textarea>
+      <div style="font-size:11px;color:var(--muted)">💡 Collez depuis Excel, Notes ou n'importe quel texte — un prénom par ligne</div>
+    </div>
+
+    <div id="importPreview"></div>
+
+    ${importList.length > 0 ? `
+      <button class="btn-primary" onclick="confirmImport()">
+        ✅ Importer ${importList.length} joueur${importList.length>1?'s':''}
+      </button>` : ''}
+  `;
+  renderImportPreview();
+}
+window.renderImport = renderImport;
+
+function parseImport() {
+  const text = document.getElementById('importTextarea')?.value || '';
+  const names = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  // Preserve existing gender choices
+  const prevMap = {};
+  importList.forEach(p => prevMap[p.name] = p.gender);
+  importList = names.map(name => ({ name, gender: prevMap[name] || 'M' }));
+  renderImportPreview();
+  // Update import button
+  const btn = document.querySelector('#playerImportSection .btn-primary');
+  if (btn) btn.textContent = `✅ Importer ${importList.length} joueur${importList.length>1?'s':''}`;
+  if (!btn && importList.length > 0) renderImport();
+}
+window.parseImport = parseImport;
+
+function setImportGender(index, gender) {
+  if (importList[index]) importList[index].gender = gender;
+  renderImportPreview();
+}
+window.setImportGender = setImportGender;
+
+function renderImportPreview() {
+  const el = document.getElementById('importPreview');
+  if (!el) return;
+  if (importList.length === 0) { el.innerHTML = ''; return; }
+
+  el.style.display = 'flex'; el.style.flexDirection = 'column'; el.style.gap = '6px';
+  el.innerHTML = `
+    <div class="row" style="margin-bottom:2px">
+      <span class="lbl">${importList.length} prénom${importList.length>1?'s':''} détecté${importList.length>1?'s':''}</span>
+      <div style="display:flex;gap:6px">
+        <button class="btn-link" onclick="setAllGender('M')" style="font-size:11px;padding:3px 8px">♂ Tous H</button>
+        <button class="btn-link" onclick="setAllGender('F')" style="font-size:11px;padding:3px 8px;border-color:var(--female);color:var(--female)">♀ Tous F</button>
+      </div>
+    </div>
+    ${importList.map((p, i) => `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;
+                  padding:9px 12px;display:flex;align-items:center;gap:10px">
+        <div class="avatar" style="width:32px;height:32px;font-size:13px;
+             background:${p.gender==='F'?'var(--female)':'var(--male)'}">
+          ${p.name[0].toUpperCase()}
+        </div>
+        <span style="flex:1;font-size:14px;font-weight:600">${p.name}</span>
+        <button onclick="setImportGender(${i},'M')"
+          style="background:${p.gender==='M'?'rgba(59,130,246,.2)':'#0a0f1e'};
+                 border:1px solid ${p.gender==='M'?'var(--male)':'var(--border)'};
+                 color:${p.gender==='M'?'var(--male)':'var(--muted)'};
+                 border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">♂</button>
+        <button onclick="setImportGender(${i},'F')"
+          style="background:${p.gender==='F'?'rgba(236,72,153,.2)':'#0a0f1e'};
+                 border:1px solid ${p.gender==='F'?'var(--female)':'var(--border)'};
+                 color:${p.gender==='F'?'var(--female)':'var(--muted)'};
+                 border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">♀</button>
+      </div>`).join('')}
+  `;
+}
+
+function setAllGender(g) {
+  importList = importList.map(p => ({ ...p, gender: g }));
+  renderImportPreview();
+}
+window.setAllGender = setAllGender;
+
+function confirmImport() {
+  if (importList.length === 0) return;
+  // Filter out already existing players
+  const existingNames = objArr(players).map(p => p.name.toLowerCase());
+  const toAdd = importList.filter(p => !existingNames.includes(p.name.toLowerCase()));
+  const skipped = importList.length - toAdd.length;
+
+  if (toAdd.length === 0) { showToast('Tous ces joueurs existent déjà !', 'err'); return; }
+
+  const msg = skipped > 0
+    ? `${toAdd.length} joueurs importés (${skipped} doublon${skipped>1?'s':''} ignoré${skipped>1?'s':''})`
+    : `${toAdd.length} joueur${toAdd.length>1?'s':''} importé${toAdd.length>1?'s':''} !`;
+  run(async () => {
+    for (const p of toAdd) {
+      const key = await fbPush('players', {name:p.name, gender:p.gender, elo:1000, wins:0, losses:0, played:0});
+      await fbUpdate(`players/${key}`, {id:key});
+    }
+    importList = [];
+    setPlayerSubTab('list');
+  }, msg);
+}
+window.confirmImport = confirmImport;
+
+
+function renderHistory() {
+  const search=document.getElementById('histSearch')?.value?.toLowerCase()||'';
+  const mArr=objArr(matches).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const filtered=mArr.filter(m=>{
+    if(!search)return true;
+    return players[m.winnerId]?.name.toLowerCase().includes(search)||players[m.loserId]?.name.toLowerCase().includes(search);
+  });
+  const el=document.getElementById('historyList');
+  el.style.display='flex'; el.style.flexDirection='column'; el.style.gap='10px';
+  el.innerHTML=filtered.length===0?'<div class="empty">Aucun match</div>':
+    filtered.map(m=>{
+      const w=players[m.winnerId], l=players[m.loserId];
+      if(!w||!l)return'';
+      const d=new Date(m.date).toLocaleDateString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+      return `<div class="hist-card">
+        <div class="row">
+          <span style="font-size:11px;color:var(--muted)">${d}</span>
+          <button class="btn-icon" onclick="confirmDeleteMatch('${m.id}')">🗑️</button>
+        </div>
+        <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span>👑</span>
+            <span style="flex:1;font-weight:700;font-size:15px">${w.name}</span>
+            <span style="color:var(--green);font-weight:700">+${m.winnerDelta}</span>
+          </div>
+          <div style="padding-left:28px;display:flex;gap:6px">
+            ${(m.sets||[]).map(s=>`<span style="background:#0a0f1e;border-radius:6px;padding:2px 8px;font-size:13px;font-weight:600">${s.s1}–${s.s2}</span>`).join('')}
+          </div>
+          <div style="padding-left:28px;display:flex;align-items:center;gap:8px">
+            <span style="flex:1;font-size:14px;color:var(--muted)">${l.name}</span>
+            <span style="color:var(--red);font-weight:700">${m.loserDelta}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+}
+
+function confirmDeleteMatch(id) {
+  showModal(`<div style="font-size:32px;margin-bottom:8px">🗑️</div>
+    <div style="font-weight:700;margin-bottom:16px">Supprimer ce match ?</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" style="background:var(--red);flex:1" onclick="doConfirm()">Supprimer</button>
+      <button class="btn-secondary" style="flex:1" onclick="closeModal()">Annuler</button>
+    </div>`, ()=>{
+    setSyncing(true);
+    run(() => fbDelete(`matches/${id}`), 'Match supprimé');
+  });
+}
+window.confirmDeleteMatch = confirmDeleteMatch;
+
+// Démarrage
+
+window.renderPlayerGrid = renderPlayerGrid;
+window.renderRanking = renderRanking;
+window.renderHistory = renderHistory;
+window.showToast = showToast;
+
+document.addEventListener('DOMContentLoaded', loadAll);
+</script>
+</head>
+<body>
+<div class="bg-glow"></div>
+
+<header>
+  <span class="logo">🏸</span>
+  <div>
+    <div class="header-title">BadmintonRank</div>
+    <div class="header-sub">Interface enseignant</div>
+  </div>
+  <div class="sync-dot" id="syncDot"></div>
+</header>
+
+<main>
+  <!-- LOADING -->
+  <div id="loadingScreen" class="loading-screen">
+    <span class="spin">🏸</span>
+    <div style="color:var(--accent);font-weight:700;font-size:18px">Chargement…</div>
+    <div id="loadingStatus" style="color:var(--muted);font-size:11px;margin-top:4px"></div>
+  </div>
+
+  <!-- TABS -->
+  <div id="tabMatch" class="tab" style="display:none">
+    <!-- BARRE DE SÉANCE -->
+    <div id="sessionBar" style="display:none" class="session-bar">
+      <div class="session-dot"></div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:700;color:var(--accent)" id="sessionTitle">Séance en cours</div>
+        <div style="font-size:11px;color:var(--muted)" id="sessionInfo">0 match joué</div>
+      </div>
+      <button class="btn-end-session" onclick="confirmEndSession()">🏁 Fin de séance</button>
+    </div>
+    <div id="noSessionBar" class="session-bar" style="background:rgba(16,185,129,0.06);border-color:rgba(16,185,129,0.2)">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600;color:var(--muted)">Aucune séance active</div>
+        <div style="font-size:11px;color:var(--muted)">Démarrez une séance pour activer le bonus d'activité</div>
+      </div>
+      <button onclick="startSession()" style="background:var(--green);color:#000;border:none;border-radius:12px;padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;min-height:44px">▶ Démarrer</button>
+    </div>
+
+    <div class="row">
+      <h2>Nouveau match</h2>
+      <select class="mini-select" id="matchGroupFilter" onchange="renderMatchTab()"><option value="all">Tous les groupes</option></select>
+    </div>
+
+    <!-- SELECTED PLAYERS BANNER -->
+    <div id="selectedBanner" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 14px">
+      <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px">
+        <div id="bannerP1" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="clearPlayer(1)">
+          <div id="bannerP1Avatar" class="avatar" style="width:44px;height:44px;font-size:19px;background:var(--muted)">?</div>
+          <span id="bannerP1Name" style="font-size:12px;color:var(--muted);text-align:center">Joueur 1</span>
+          <span id="bannerP1Elo" style="font-size:10px;color:var(--muted)"></span>
+        </div>
+        <div class="vs-circle" style="margin:0 auto">VS</div>
+        <div id="bannerP2" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="clearPlayer(2)">
+          <div id="bannerP2Avatar" class="avatar" style="width:44px;height:44px;font-size:19px;background:var(--muted)">?</div>
+          <span id="bannerP2Name" style="font-size:12px;color:var(--muted);text-align:center">Joueur 2</span>
+          <span id="bannerP2Elo" style="font-size:10px;color:var(--muted)"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- PLAYER GRID PICKER -->
+    <div id="playerPickerSection">
+      <div id="pickingLabel" style="font-size:12px;color:var(--accent);font-weight:700;text-align:center;padding:4px 0">Sélectionnez le Joueur 1</div>
+      <div id="playerGrid"></div>
+    </div>
+
+    <!-- SETS + SUBMIT (hidden until both selected) -->
+    <div id="matchFormSection" style="display:none;flex-direction:column;gap:12px">
+      <div class="card">
+        <div class="row"><span class="lbl">Scores par set</span><button class="btn-link" onclick="addSet()">+ Set</button></div>
+        <div id="setsContainer"></div>
+        <div id="scorePreview" style="display:none" class="score-preview"></div>
+      </div>
+      <button class="btn-primary" id="submitMatchBtn" onclick="submitMatch()">Valider le match</button>
+    </div>
+
+    <div class="hint" id="matchHint" style="display:none">💡 Ajoutez des joueurs dans l'onglet Joueurs</div>
+  </div>
+
+  <div id="tabPlayers" class="tab" style="display:none">
+    <div class="mini-tabs">
+      <button class="mini-tab active" id="ptabList" onclick="setPlayerSubTab('list')">👥 Joueurs</button>
+      <button class="mini-tab" id="ptabGroups" onclick="setPlayerSubTab('groups')">📁 Groupes</button>
+      <button class="mini-tab" id="ptabImport" onclick="setPlayerSubTab('import')">📥 Import</button>
+    </div>
+    <div id="playerListSection"></div>
+    <div id="playerGroupsSection" style="display:none"></div>
+    <div id="playerImportSection" style="display:none"></div>
+  </div>
+
+  <div id="tabRanking" class="tab" style="display:none">
+    <div class="row"><h2>Classement</h2><button class="btn-export" onclick="exportCSV()">⬇ CSV</button></div>
+    <div class="filter-bar" id="rankingFilters"></div>
+    <div id="rankingList"></div>
+    <div class="qr-box" id="qrBox"></div>
+  </div>
+
+  <div id="tabHistory" class="tab" style="display:none">
+    <h2>Historique</h2>
+    <input type="text" id="histSearch" placeholder="🔍 Rechercher un joueur…" oninput="renderHistory()"/>
+    <div id="historyList"></div>
+  </div>
+</main>
+
+<nav>
+  <button class="nav-btn active" id="navMatch" onclick="setTab('Match')"><span class="nav-icon">🏸</span><span class="nav-label">Match</span></button>
+  <button class="nav-btn" id="navPlayers" onclick="setTab('Players')"><span class="nav-icon">👥</span><span class="nav-label">Joueurs</span></button>
+  <button class="nav-btn" id="navRanking" onclick="setTab('Ranking')"><span class="nav-icon">🏆</span><span class="nav-label">Classement</span></button>
+  <button class="nav-btn" id="navHistory" onclick="setTab('History')"><span class="nav-icon">📋</span><span class="nav-label">Historique</span></button>
+</nav>
+
+<div class="toast hidden" id="toast"></div>
+<div class="modal hidden" id="modal"><div class="modal-box" id="modalBox"></div></div>
+
+</body>
+</html>
