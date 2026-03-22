@@ -131,6 +131,8 @@
 const BIN_ID  = "69bc8057c3097a1dd53f20db";
 const API_KEY = "$2a$10$XTzK1mpZw16YKGNxiOp3ue/eOxXfkyxefdDl6NFPLfhZVRBPTVVne";
 const BIN_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+const PUBLIC_URL = "https://tribet31.github.io/BadmintonStaps31/classement.html";
+const QR_URL = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(PUBLIC_URL)}`;
 
 let allPlayers = {}, allGroups = {};
 let currentGroup = "all", searchQuery = "";
