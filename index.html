@@ -1701,10 +1701,11 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('beforeunload', () => {
   if (Object.keys(players).length > 0) downloadBackup();
 });
+
+document.addEventListener('DOMContentLoaded', () => {
   if (sessionStorage.getItem('pin_ok') === '1') {
     document.getElementById('pinScreen').style.display = 'none';
     loadAll().then(() => {
-      // Vérifier si un groupe actif est mémorisé
       const savedGroup = sessionStorage.getItem('activeGroupId');
       if (savedGroup && groups[savedGroup]) {
         initActiveGroup(savedGroup);
