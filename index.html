@@ -310,7 +310,7 @@ let editPlayerGender = 'M';
 let session = null;
 let matchP1Id = '', matchP2Id = '';
 let importList = [];
-let activeGroupId = sessionStorage.getItem('activeGroupId') || null;
+let activeGroupId = null; // Toujours null au lancement
 
 async function loadAll() {
   document.getElementById('loadingStatus').textContent = 'Chargement…';
@@ -1614,7 +1614,7 @@ function checkPin() {
   if (pinEntry === CORRECT_PIN) {
     sessionStorage.setItem('pin_ok', '1');
     document.getElementById('pinScreen').style.display = 'none';
-    loadAll().then(showGroupSelector);
+    loadAll().then(() => showGroupSelector());
   } else {
     for (let i = 0; i < 4; i++) document.getElementById(`pd${i}`).classList.add('error');
     document.getElementById('pinError').textContent = 'Code incorrect';
@@ -1706,12 +1706,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (sessionStorage.getItem('pin_ok') === '1') {
     document.getElementById('pinScreen').style.display = 'none';
     loadAll().then(() => {
-      const savedGroup = sessionStorage.getItem('activeGroupId');
-      if (savedGroup && groups[savedGroup]) {
-        initActiveGroup(savedGroup);
-      } else {
-        showGroupSelector();
-      }
+      // Toujours afficher l'écran de sélection de groupe au lancement
+      showGroupSelector();
     });
   }
 });
