@@ -256,6 +256,23 @@
     /* SCROLLING */
     main { -webkit-overflow-scrolling: touch; }
     * { -webkit-tap-highlight-color: transparent; }
+
+    /* PIN SCREEN */
+    .pin-screen { position: fixed; inset: 0; background: var(--bg); z-index: 999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 30px; }
+    .pin-dots { display: flex; gap: 16px; }
+    .pin-dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); transition: all .2s; }
+    .pin-dot.filled { background: var(--accent); border-color: var(--accent); transform: scale(1.1); }
+    .pin-dot.error { background: var(--red); border-color: var(--red); animation: shake .3s; }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+    .pin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; max-width: 280px; }
+    .pin-btn { background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 18px; font-size: 24px; font-weight: 700; cursor: pointer;
+      font-family: 'DM Sans', sans-serif; color: var(--text); transition: all .1s;
+      min-height: 64px; display: flex; align-items: center; justify-content: center; }
+    .pin-btn:active { background: rgba(245,158,11,0.15); border-color: var(--accent); transform: scale(.94); }
+    .pin-btn.del { font-size: 20px; color: var(--muted); }
+    .pin-btn.zero { grid-column: 2; }
   </style>
 
 <script defer>
@@ -515,6 +532,34 @@ function computeSessionRecap() {
   }).filter(Boolean).sort((a,b) => b.matchCount - a.matchCount);
 }
 
+function downloadBackup() {
+  const date = new Date().toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit', year:'numeric'}).replace(/\//g,'-');
+  const sorted = objArr(players).sort((a,b) => b.elo - a.elo);
+  const backup = {
+    date: new Date().toISOString(),
+    classement: sorted.map((p,i) => ({
+      rang: i+1, nom: p.name, genre: p.gender==='F'?'Femme':'Homme',
+      elo: p.elo, victoires: p.wins||0, defaites: p.losses||0, matchs: p.played||0
+    })),
+    matchs: objArr(matches).sort((a,b)=>new Date(b.date)-new Date(a.date)).map(m=>({
+      date: new Date(m.date).toLocaleDateString('fr-FR'),
+      vainqueur: players[m.winnerId]?.name||'?',
+      perdant: players[m.loserId]?.name||'?',
+      score: (m.sets||[]).map(s=>`${s.s1}-${s.s2}`).join(' '),
+      deltaV: m.winnerDelta, deltaP: m.loserDelta
+    })),
+    donneesBrutes: _data
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: `badminton_sauvegarde_${date}.json`
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+window.downloadBackup = downloadBackup;
+
 function applyEndSession() {
   closeModal();
   const recap = computeSessionRecap();
@@ -533,14 +578,16 @@ function applyEndSession() {
       if (val === null) await fbDelete(path);
       else await fbUpdate(path, typeof val === 'object' ? val : {});
     }
-    const sKey = await fbPush('sessions', {
+    await fbPush('sessions', {
       date: new Date().toISOString(),
       matchIds: session.matchIds,
       recap: recap.map(r => ({id:r.id, name:r.name, matchCount:r.matchCount, coeff:r.coeff, eloAdjust:r.eloAdjust}))
     });
     session = null;
     updateSessionBar();
-  }, 'Séance clôturée et classement ajusté !');
+    // Téléchargement automatique de la sauvegarde
+    setTimeout(downloadBackup, 500);
+  }, 'Séance clôturée · Sauvegarde téléchargée !');
 }
 window.applyEndSession = applyEndSession;
 
@@ -749,13 +796,20 @@ function updateMatchFormVisibility() {
   const picker = document.getElementById('playerPickerSection');
   const bothSelected = matchP1Id && matchP2Id;
 
-  // Masquer la grille quand les 2 joueurs sont sélectionnés
   picker.style.display = bothSelected ? 'none' : 'block';
 
   if (bothSelected) {
     form.style.display = 'flex';
     renderSets();
     updateMatchPreview();
+    // 1. Focus automatique sur le champ score du second joueur
+    setTimeout(() => {
+      const inputs = document.querySelectorAll('.set-input');
+      if (inputs.length >= 2) {
+        inputs[1].focus();
+        inputs[1].select();
+      }
+    }, 100);
   } else {
     form.style.display = 'none';
   }
@@ -828,6 +882,8 @@ function submitMatch() {
     matchP1Id=''; matchP2Id='';
     renderSets(); updateMatchPreview();
     updateBanner(); updateMatchFormVisibility();
+    // 2. Remonter en haut de la page après validation
+    window.scrollTo({top: 0, behavior: 'smooth'});
     const btn=document.getElementById('submitMatchBtn');
     btn.textContent='✓ Match enregistré !'; btn.style.background='var(--green)';
     setTimeout(()=>{btn.textContent='Valider le match';btn.style.background='';},2500);
@@ -917,26 +973,37 @@ function renderPlayerGroups() {
   const sec = document.getElementById('playerGroupsSection');
   const gArr = objArr(groups);
   const pArr = objArr(players);
+
+  // Mapping joueur → groupe actuel
+  const playerGroupMap = {};
+  gArr.forEach(g => (g.playerIds||[]).forEach(pid => playerGroupMap[pid] = g.id));
+
   sec.innerHTML = `
     <div class="card">
       <input type="text" id="newGroupName" placeholder="Nom du groupe (ex : Groupe A)"/>
       <button class="btn-primary" onclick="addGroup()">Créer le groupe</button>
     </div>
     ${gArr.length===0?'<div class="empty">Aucun groupe créé</div>':''}
-    ${gArr.map(g=>`
+    ${gArr.map(g=>{
+      const inGroup = pArr.filter(p => (g.playerIds||[]).includes(p.id));
+      const notInAnyGroup = pArr.filter(p => !playerGroupMap[p.id]);
+      // Joueurs disponibles = dans ce groupe + sans groupe
+      const available = pArr.filter(p => (g.playerIds||[]).includes(p.id) || !playerGroupMap[p.id]);
+      return `
       <div class="card">
         <div class="row">
-          <span style="font-weight:700">${g.name} <span style="font-size:11px;color:var(--muted)">(${(g.playerIds||[]).length}/${pArr.length})</span></span>
+          <span style="font-weight:700">${g.name} <span style="font-size:11px;color:var(--muted)">(${(g.playerIds||[]).length} joueur${(g.playerIds||[]).length>1?'s':''})</span></span>
           <div style="display:flex;gap:6px;align-items:center">
-            <button class="btn-link" style="font-size:11px;padding:5px 10px" onclick="selectAllGroup('${g.id}')">✅ Tous</button>
-            <button class="btn-link" style="font-size:11px;padding:5px 10px;border-color:var(--muted);color:var(--muted)" onclick="deselectAllGroup('${g.id}')">☐ Aucun</button>
+            <button class="btn-link" style="font-size:11px;padding:5px 10px" onclick="selectAllGroup('${g.id}')">✅ Tous libres</button>
+            <button class="btn-link" style="font-size:11px;padding:5px 10px;border-color:var(--muted);color:var(--muted)" onclick="deselectAllGroup('${g.id}')">☐ Vider</button>
             <button class="btn-icon" onclick="confirmDeleteGroup('${g.id}','${g.name}')">🗑️</button>
           </div>
         </div>
-        ${pArr.map(p=>{
+        ${available.length === 0 ? '<div style="font-size:12px;color:var(--muted);padding:4px 0">Tous les joueurs sont déjà dans un groupe</div>' : ''}
+        ${available.map(p=>{
           const inG=(g.playerIds||[]).includes(p.id);
           return `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 0;border-bottom:1px solid var(--border)">
-            <input type="checkbox" ${inG?'checked':''} onchange="toggleGroup('${p.id}','${g.id}',this.checked)"
+            <input type="checkbox" ${inG?'checked':''} onchange="toggleGroupExclusive('${p.id}','${g.id}',this.checked)"
               style="accent-color:var(--accent);width:18px;height:18px;flex-shrink:0"/>
             <div class="avatar" style="width:30px;height:30px;font-size:12px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
               ${p.name[0].toUpperCase()}
@@ -945,7 +1012,8 @@ function renderPlayerGroups() {
             <span style="font-size:12px;color:var(--accent)">${p.elo}</span>
           </label>`;
         }).join('')}
-      </div>`).join('')}`;
+      </div>`;
+    }).join('')}`;
   sec.style.display='flex'; sec.style.flexDirection='column'; sec.style.gap='10px';
 }
 
@@ -1032,26 +1100,37 @@ function confirmDeleteGroup(id, name) {
 window.confirmDeleteGroup = confirmDeleteGroup;
 
 function selectAllGroup(groupId) {
-  const allIds = objArr(players).map(p => p.id);
-  setSyncing(true);
-  run(() => fbUpdate(`groups/${groupId}`, {playerIds:allIds}), 'Tous les joueurs ajoutés !');
+  // Seulement les joueurs sans groupe + ceux déjà dans ce groupe
+  const gArr = objArr(groups);
+  const playerGroupMap = {};
+  gArr.forEach(g => (g.playerIds||[]).forEach(pid => playerGroupMap[pid] = g.id));
+  const eligible = objArr(players).filter(p => !playerGroupMap[p.id] || playerGroupMap[p.id] === groupId).map(p => p.id);
+  run(() => fbUpdate(`groups/${groupId}`, {playerIds: eligible}), 'Joueurs libres ajoutés !');
 }
 window.selectAllGroup = selectAllGroup;
 
 function deselectAllGroup(groupId) {
-  setSyncing(true);
   run(() => fbUpdate(`groups/${groupId}`, {playerIds:[]}), 'Groupe vidé');
 }
 window.deselectAllGroup = deselectAllGroup;
 
-
-function toggleGroup(playerId, groupId, checked) {
-  const g=groups[groupId]; if(!g)return;
-  const ids=(g.playerIds||[]);
-  const newIds=checked?[...new Set([...ids,playerId])]:ids.filter(x=>x!==playerId);
-  run(() => fbUpdate(`groups/${groupId}`, {playerIds:newIds}));
+// Exclusif : un joueur ne peut être que dans un seul groupe
+function toggleGroupExclusive(playerId, groupId, checked) {
+  run(async () => {
+    const gArr = objArr(groups);
+    for (const g of gArr) {
+      const ids = g.playerIds || [];
+      if (g.id === groupId) {
+        const newIds = checked ? [...new Set([...ids, playerId])] : ids.filter(x => x !== playerId);
+        await fbUpdate(`groups/${g.id}`, {playerIds: newIds});
+      } else if (checked && ids.includes(playerId)) {
+        // Retirer du groupe précédent
+        await fbUpdate(`groups/${g.id}`, {playerIds: ids.filter(x => x !== playerId)});
+      }
+    }
+  });
 }
-window.toggleGroup = toggleGroup;
+window.toggleGroupExclusive = toggleGroupExclusive;
 
 // ── RANKING TAB ───────────────────────────────────────────────────────────────
 function renderRanking() {
@@ -1117,35 +1196,60 @@ function renderImport() {
   sec.style.display = 'flex'; sec.style.flexDirection = 'column'; sec.style.gap = '12px';
   sec.innerHTML = `
     <div class="card">
-      <span class="lbl">Coller une liste de prénoms</span>
-      <textarea id="importTextarea" placeholder="Un prénom par ligne :&#10;Alice&#10;Bob&#10;Marie&#10;Thomas…"
+      <span class="lbl">📥 Importer depuis un fichier CSV</span>
+      <div style="font-size:12px;color:var(--muted);line-height:1.6">
+        Format attendu — 3 colonnes séparées par <strong style="color:var(--accent)">;</strong> :<br/>
+        <code style="background:#0a0f1e;padding:2px 6px;border-radius:4px;font-size:11px">Nom;Sexe;Groupe</code><br/>
+        Sexe : <strong>M</strong> ou <strong>F</strong> · Groupe : nom exact ou vide
+      </div>
+      <input type="file" id="csvFileInput" accept=".csv,.txt" onchange="parseCsvFile(this)"
+        style="background:#0a0f1e;border:1px solid var(--border);border-radius:10px;padding:10px;
+               color:var(--text);font-size:13px;width:100%;font-family:'DM Sans',sans-serif"/>
+      <div style="font-size:11px;color:var(--muted);text-align:center">— ou collez directement —</div>
+      <textarea id="importTextarea" placeholder="Alice;F;Groupe A&#10;Bob;M;Groupe B&#10;Marie;F;&#10;Thomas;M;Groupe A"
         style="background:#0a0f1e;border:1px solid var(--border);border-radius:10px;padding:12px;
-               color:var(--text);font-size:14px;width:100%;font-family:'DM Sans',sans-serif;
-               outline:none;resize:vertical;min-height:120px;line-height:1.6"
-        oninput="parseImport()">${importList.map(p=>p.name).join('\n')}</textarea>
-      <div style="font-size:11px;color:var(--muted)">💡 Collez depuis Excel, Notes ou n'importe quel texte — un prénom par ligne</div>
+               color:var(--text);font-size:13px;width:100%;font-family:'DM Sans',sans-serif;
+               outline:none;resize:vertical;min-height:100px;line-height:1.6"
+        oninput="parseImport()">${importList.map(p=>`${p.name};${p.gender};${p.groupe||""}`).join("\n")}</textarea>
     </div>
-
     <div id="importPreview"></div>
-
     ${importList.length > 0 ? `
       <button class="btn-primary" onclick="confirmImport()">
-        ✅ Importer ${importList.length} joueur${importList.length>1?'s':''}
-      </button>` : ''}
+        ✅ Importer ${importList.length} joueur${importList.length>1?"s":""}
+      </button>` : ""}
   `;
   renderImportPreview();
 }
 window.renderImport = renderImport;
 
+function parseCsvFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('importTextarea').value = e.target.result;
+    parseImport();
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+window.parseCsvFile = parseCsvFile;
+
 function parseImport() {
   const text = document.getElementById('importTextarea')?.value || '';
-  const names = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  // Preserve existing gender choices
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const prevMap = {};
-  importList.forEach(p => prevMap[p.name] = p.gender);
-  importList = names.map(name => ({ name, gender: prevMap[name] || 'M' }));
+  importList.forEach(p => prevMap[p.name] = p);
+  importList = lines.map(line => {
+    const sep = line.includes(';') ? ';' : ',';
+    const parts = line.split(sep).map(s => s.trim());
+    const name = parts[0] || '';
+    if (!name) return null;
+    const genderRaw = (parts[1] || '').toUpperCase();
+    const gender = genderRaw === 'F' ? 'F' : genderRaw === 'M' ? 'M' : (prevMap[name]?.gender || 'M');
+    const groupe = parts[2] || prevMap[name]?.groupe || '';
+    return { name, gender, groupe };
+  }).filter(Boolean);
   renderImportPreview();
-  // Update import button
   const btn = document.querySelector('#playerImportSection .btn-primary');
   if (btn) btn.textContent = `✅ Importer ${importList.length} joueur${importList.length>1?'s':''}`;
   if (!btn && importList.length > 0) renderImport();
@@ -1162,36 +1266,36 @@ function renderImportPreview() {
   const el = document.getElementById('importPreview');
   if (!el) return;
   if (importList.length === 0) { el.innerHTML = ''; return; }
-
+  const gArr = objArr(groups);
+  const groupNames = [...new Set(importList.map(p => p.groupe).filter(Boolean))];
+  const newGroups = groupNames.filter(g => !gArr.find(x => x.name.toLowerCase() === g.toLowerCase()));
   el.style.display = 'flex'; el.style.flexDirection = 'column'; el.style.gap = '6px';
   el.innerHTML = `
     <div class="row" style="margin-bottom:2px">
-      <span class="lbl">${importList.length} prénom${importList.length>1?'s':''} détecté${importList.length>1?'s':''}</span>
+      <span class="lbl">${importList.length} joueur${importList.length>1?'s':''} · ${groupNames.length} groupe${groupNames.length>1?'s':''}</span>
       <div style="display:flex;gap:6px">
         <button class="btn-link" onclick="setAllGender('M')" style="font-size:11px;padding:3px 8px">♂ Tous H</button>
         <button class="btn-link" onclick="setAllGender('F')" style="font-size:11px;padding:3px 8px;border-color:var(--female);color:var(--female)">♀ Tous F</button>
       </div>
     </div>
+    ${newGroups.length > 0 ? `<div style="font-size:11px;color:var(--accent);padding:4px 0">
+      ✨ Nouveaux groupes : <strong>${newGroups.join(', ')}</strong>
+    </div>` : ''}
     ${importList.map((p, i) => `
       <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;
                   padding:9px 12px;display:flex;align-items:center;gap:10px">
-        <div class="avatar" style="width:32px;height:32px;font-size:13px;
-             background:${p.gender==='F'?'var(--female)':'var(--male)'}">
+        <div class="avatar" style="width:32px;height:32px;font-size:13px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
           ${p.name[0].toUpperCase()}
         </div>
-        <span style="flex:1;font-size:14px;font-weight:600">${p.name}</span>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:600">${p.name}</div>
+          ${p.groupe ? `<div style="font-size:11px;color:var(--accent)">${p.groupe}</div>` : '<div style="font-size:11px;color:var(--muted)">Sans groupe</div>'}
+        </div>
         <button onclick="setImportGender(${i},'M')"
-          style="background:${p.gender==='M'?'rgba(59,130,246,.2)':'#0a0f1e'};
-                 border:1px solid ${p.gender==='M'?'var(--male)':'var(--border)'};
-                 color:${p.gender==='M'?'var(--male)':'var(--muted)'};
-                 border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">♂</button>
+          style="background:${p.gender==='M'?'rgba(59,130,246,.2)':'#0a0f1e'};border:1px solid ${p.gender==='M'?'var(--male)':'var(--border)'};color:${p.gender==='M'?'var(--male)':'var(--muted)'};border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">♂</button>
         <button onclick="setImportGender(${i},'F')"
-          style="background:${p.gender==='F'?'rgba(236,72,153,.2)':'#0a0f1e'};
-                 border:1px solid ${p.gender==='F'?'var(--female)':'var(--border)'};
-                 color:${p.gender==='F'?'var(--female)':'var(--muted)'};
-                 border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">♀</button>
-      </div>`).join('')}
-  `;
+          style="background:${p.gender==='F'?'rgba(236,72,153,.2)':'#0a0f1e'};border:1px solid ${p.gender==='F'?'var(--female)':'var(--border)'};color:${p.gender==='F'?'var(--female)':'var(--muted)'};border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">♀</button>
+      </div>`).join('')}`;
 }
 
 function setAllGender(g) {
@@ -1202,20 +1306,40 @@ window.setAllGender = setAllGender;
 
 function confirmImport() {
   if (importList.length === 0) return;
-  // Filter out already existing players
   const existingNames = objArr(players).map(p => p.name.toLowerCase());
   const toAdd = importList.filter(p => !existingNames.includes(p.name.toLowerCase()));
   const skipped = importList.length - toAdd.length;
-
   if (toAdd.length === 0) { showToast('Tous ces joueurs existent déjà !', 'err'); return; }
-
   const msg = skipped > 0
     ? `${toAdd.length} joueurs importés (${skipped} doublon${skipped>1?'s':''} ignoré${skipped>1?'s':''})`
     : `${toAdd.length} joueur${toAdd.length>1?'s':''} importé${toAdd.length>1?'s':''} !`;
   run(async () => {
+    const gArr = objArr(groups);
+    const groupMap = {};
+    gArr.forEach(g => groupMap[g.name.toLowerCase()] = g.id);
+    const groupNames = [...new Set(toAdd.map(p => p.groupe).filter(Boolean))];
+    for (const gName of groupNames) {
+      if (!groupMap[gName.toLowerCase()]) {
+        const key = await fbPush('groups', {name: gName, playerIds: []});
+        await fbUpdate(`groups/${key}`, {id: key});
+        groupMap[gName.toLowerCase()] = key;
+      }
+    }
+    const playersByGroup = {};
     for (const p of toAdd) {
       const key = await fbPush('players', {name:p.name, gender:p.gender, elo:1000, wins:0, losses:0, played:0});
-      await fbUpdate(`players/${key}`, {id:key});
+      await fbUpdate(`players/${key}`, {id: key});
+      if (p.groupe) {
+        const gId = groupMap[p.groupe.toLowerCase()];
+        if (gId) {
+          if (!playersByGroup[gId]) playersByGroup[gId] = [];
+          playersByGroup[gId].push(key);
+        }
+      }
+    }
+    for (const [gId, newIds] of Object.entries(playersByGroup)) {
+      const cur = _data.groups?.[gId]?.playerIds || [];
+      await fbUpdate(`groups/${gId}`, {playerIds: [...new Set([...cur, ...newIds])]});
     }
     importList = [];
     setPlayerSubTab('list');
@@ -1225,41 +1349,131 @@ window.confirmImport = confirmImport;
 
 
 function renderHistory() {
-  const search=document.getElementById('histSearch')?.value?.toLowerCase()||'';
-  const mArr=objArr(matches).sort((a,b)=>new Date(b.date)-new Date(a.date));
-  const filtered=mArr.filter(m=>{
-    if(!search)return true;
-    return players[m.winnerId]?.name.toLowerCase().includes(search)||players[m.loserId]?.name.toLowerCase().includes(search);
-  });
-  const el=document.getElementById('historyList');
-  el.style.display='flex'; el.style.flexDirection='column'; el.style.gap='10px';
-  el.innerHTML=filtered.length===0?'<div class="empty">Aucun match</div>':
-    filtered.map(m=>{
-      const w=players[m.winnerId], l=players[m.loserId];
-      if(!w||!l)return'';
-      const d=new Date(m.date).toLocaleDateString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-      return `<div class="hist-card">
-        <div class="row">
-          <span style="font-size:11px;color:var(--muted)">${d}</span>
-          <button class="btn-icon" onclick="confirmDeleteMatch('${m.id}')">🗑️</button>
-        </div>
-        <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
-          <div style="display:flex;align-items:center;gap:8px">
-            <span>👑</span>
-            <span style="flex:1;font-weight:700;font-size:15px">${w.name}</span>
-            <span style="color:var(--green);font-weight:700">+${m.winnerDelta}</span>
+  const search = (document.getElementById('histSearch')?.value || '').toLowerCase();
+  const gArr = objArr(groups);
+
+  // Mettre à jour le filtre groupe
+  const grpSel = document.getElementById('histGroupFilter');
+  if (grpSel) {
+    const cur = grpSel.value || 'all';
+    grpSel.innerHTML = '<option value="all">Tous</option>' +
+      gArr.map(g => `<option value="${g.id}" ${cur===g.id?'selected':''}>${g.name}</option>`).join('');
+    grpSel.value = cur;
+  }
+  const grpFilter = grpSel?.value || 'all';
+
+  const mArr = objArr(matches);
+  const pArr = objArr(players).sort((a,b) => b.elo - a.elo);
+
+  // Filtres
+  let filtered = pArr;
+  if (grpFilter !== 'all') filtered = filtered.filter(p => (groups[grpFilter]?.playerIds||[]).includes(p.id));
+  if (search) filtered = filtered.filter(p => p.name.toLowerCase().includes(search));
+
+  const el = document.getElementById('historyList');
+  el.style.display = 'flex'; el.style.flexDirection = 'column'; el.style.gap = '10px';
+
+  if (filtered.length === 0) { el.innerHTML = '<div class="empty">Aucun joueur</div>'; return; }
+
+  el.innerHTML = filtered.map(p => {
+    // Matchs du joueur
+    const pMatches = mArr.filter(m => m.winnerId === p.id || m.loserId === p.id);
+    if (pMatches.length === 0) return `
+      <div class="hist-card">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="avatar" style="width:38px;height:38px;font-size:15px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
+            ${p.name[0].toUpperCase()}
           </div>
-          <div style="padding-left:28px;display:flex;gap:6px">
-            ${(m.sets||[]).map(s=>`<span style="background:#0a0f1e;border-radius:6px;padding:2px 8px;font-size:13px;font-weight:600">${s.s1}–${s.s2}</span>`).join('')}
-          </div>
-          <div style="padding-left:28px;display:flex;align-items:center;gap:8px">
-            <span style="flex:1;font-size:14px;color:var(--muted)">${l.name}</span>
-            <span style="color:var(--red);font-weight:700">${m.loserDelta}</span>
-          </div>
+          <div style="flex:1;font-weight:700">${p.name}</div>
+          <div style="font-size:11px;color:var(--muted)">Aucun match</div>
         </div>
       </div>`;
-    }).join('');
+
+    // Adversaires battus et perdus
+    const beaten = [], lost = [];
+    let totalEloDiff = 0;
+    let vsStronger = 0, vsWeaker = 0, vsGenderBonus = 0;
+
+    pMatches.forEach(m => {
+      const isWinner = m.winnerId === p.id;
+      const oppId = isWinner ? m.loserId : m.winnerId;
+      const opp = players[oppId];
+      if (!opp) return;
+      const eloDiff = opp.elo - p.elo; // positif = adversaire plus fort
+      totalEloDiff += eloDiff;
+      if (eloDiff > 0) vsStronger++;
+      else vsWeaker++;
+      // bonus genre : fille vs garçon
+      if (p.gender === 'F' && opp.gender === 'M') vsGenderBonus++;
+      if (isWinner) beaten.push({name: opp.name, elo: opp.elo, eloDiff});
+      else lost.push({name: opp.name, elo: opp.elo, eloDiff});
+    });
+
+    // Indice de risque : écart ELO moyen des adversaires
+    const avgEloDiff = Math.round(totalEloDiff / pMatches.length);
+    const riskLabel = avgEloDiff > 50 ? '🔥 Audacieux' : avgEloDiff > 0 ? '⚡ Challenger' : avgEloDiff > -50 ? '🎯 Équilibré' : '🛡️ Prudent';
+    const riskColor = avgEloDiff > 50 ? 'var(--red)' : avgEloDiff > 0 ? 'var(--accent)' : avgEloDiff > -50 ? 'var(--green)' : 'var(--muted)';
+
+    const wr = pMatches.length ? Math.round((p.wins||0)/pMatches.length*100) : 0;
+
+    // Trier adversaires par écart ELO
+    beaten.sort((a,b) => b.eloDiff - a.eloDiff);
+    lost.sort((a,b) => b.eloDiff - a.eloDiff);
+
+    const oppTag = (o) => {
+      const diff = o.eloDiff > 0 ? `+${o.eloDiff}` : `${o.eloDiff}`;
+      const col = o.eloDiff > 0 ? 'var(--red)' : 'var(--green)';
+      return `<span style="background:var(--bg);border-radius:8px;padding:3px 8px;font-size:11px;display:inline-flex;align-items:center;gap:4px;margin:2px">
+        ${o.name} <span style="color:${col};font-weight:700;font-size:10px">${diff}</span>
+      </span>`;
+    };
+
+    return `
+      <div class="hist-card">
+        <!-- En-tête joueur -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div class="avatar" style="width:40px;height:40px;font-size:16px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
+            ${p.name[0].toUpperCase()}
+          </div>
+          <div style="flex:1">
+            <div style="font-weight:800;font-size:15px">${p.name}</div>
+            <div style="font-size:11px;color:var(--muted)">${pMatches.length} match${pMatches.length>1?'s':''} · ${wr}% victoires · ${p.elo} pts</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:13px;font-weight:700;color:${riskColor}">${riskLabel}</div>
+            <div style="font-size:10px;color:var(--muted)">moy. ${avgEloDiff>0?'+':''}${avgEloDiff} ELO</div>
+          </div>
+        </div>
+
+        <!-- Barre win rate -->
+        <div style="background:var(--border);border-radius:6px;height:5px;overflow:hidden;margin-bottom:10px">
+          <div style="width:${wr}%;height:100%;background:var(--green);border-radius:6px;transition:width .4s"></div>
+        </div>
+
+        <!-- Adversaires battus -->
+        ${beaten.length > 0 ? `
+        <div style="margin-bottom:8px">
+          <div style="font-size:11px;color:var(--green);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">
+            ✓ Battu (${beaten.length})
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:2px">${beaten.map(oppTag).join('')}</div>
+        </div>` : ''}
+
+        <!-- Adversaires perdus -->
+        ${lost.length > 0 ? `
+        <div>
+          <div style="font-size:11px;color:var(--red);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">
+            ✗ Perdu contre (${lost.length})
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:2px">${lost.map(oppTag).join('')}</div>
+        </div>` : ''}
+
+        ${p.gender==='F' && vsGenderBonus > 0 ? `
+        <div style="margin-top:8px;font-size:11px;color:var(--female)">♀ ${vsGenderBonus} match${vsGenderBonus>1?'s':''} contre des garçons</div>` : ''}
+      </div>`;
+  }).join('');
 }
+window.renderHistory = renderHistory;
 
 function confirmDeleteMatch(id) {
   showModal(`<div style="font-size:32px;margin-bottom:8px">🗑️</div>
@@ -1274,18 +1488,93 @@ function confirmDeleteMatch(id) {
 }
 window.confirmDeleteMatch = confirmDeleteMatch;
 
-// Démarrage
+// ── PIN ───────────────────────────────────────────────────────────────────────
+const CORRECT_PIN = '3181';
+let pinEntry = '';
 
-window.renderPlayerGrid = renderPlayerGrid;
-window.renderRanking = renderRanking;
-window.renderHistory = renderHistory;
-window.showToast = showToast;
+function pinPress(digit) {
+  if (pinEntry.length >= 4) return;
+  pinEntry += digit;
+  updatePinDots();
+  if (pinEntry.length === 4) {
+    setTimeout(checkPin, 150);
+  }
+}
+window.pinPress = pinPress;
 
-document.addEventListener('DOMContentLoaded', loadAll);
+function pinDel() {
+  pinEntry = pinEntry.slice(0, -1);
+  updatePinDots();
+}
+window.pinDel = pinDel;
+
+function updatePinDots() {
+  for (let i = 0; i < 4; i++) {
+    const dot = document.getElementById(`pd${i}`);
+    dot.classList.toggle('filled', i < pinEntry.length);
+    dot.classList.remove('error');
+  }
+}
+
+function checkPin() {
+  if (pinEntry === CORRECT_PIN) {
+    // Mémoriser dans sessionStorage pour ne pas redemander
+    sessionStorage.setItem('pin_ok', '1');
+    document.getElementById('pinScreen').style.display = 'none';
+    loadAll();
+  } else {
+    // Code faux — animation d'erreur
+    for (let i = 0; i < 4; i++) {
+      document.getElementById(`pd${i}`).classList.add('error');
+    }
+    document.getElementById('pinError').textContent = 'Code incorrect';
+    setTimeout(() => {
+      pinEntry = '';
+      updatePinDots();
+      document.getElementById('pinError').textContent = '';
+    }, 800);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Si déjà authentifié dans cette session, passer directement
+  if (sessionStorage.getItem('pin_ok') === '1') {
+    document.getElementById('pinScreen').style.display = 'none';
+    loadAll();
+  }
+  // Sinon l'écran PIN reste affiché, loadAll sera appelé après validation
+});
 </script>
 </head>
 <body>
 <div class="bg-glow"></div>
+
+<!-- ÉCRAN PIN -->
+<div class="pin-screen" id="pinScreen">
+  <span style="font-size:48px">🏸</span>
+  <div style="font-size:20px;font-weight:800;color:var(--accent)">BadmintonRank</div>
+  <div style="font-size:13px;color:var(--muted)">Code enseignant</div>
+  <div class="pin-dots">
+    <div class="pin-dot" id="pd0"></div>
+    <div class="pin-dot" id="pd1"></div>
+    <div class="pin-dot" id="pd2"></div>
+    <div class="pin-dot" id="pd3"></div>
+  </div>
+  <div id="pinError" style="font-size:13px;color:var(--red);height:18px"></div>
+  <div class="pin-grid">
+    <button class="pin-btn" onclick="pinPress('1')">1</button>
+    <button class="pin-btn" onclick="pinPress('2')">2</button>
+    <button class="pin-btn" onclick="pinPress('3')">3</button>
+    <button class="pin-btn" onclick="pinPress('4')">4</button>
+    <button class="pin-btn" onclick="pinPress('5')">5</button>
+    <button class="pin-btn" onclick="pinPress('6')">6</button>
+    <button class="pin-btn" onclick="pinPress('7')">7</button>
+    <button class="pin-btn" onclick="pinPress('8')">8</button>
+    <button class="pin-btn" onclick="pinPress('9')">9</button>
+    <button class="pin-btn zero" onclick="pinPress('0')">0</button>
+    <button class="pin-btn del" onclick="pinDel()">⌫</button>
+  </div>
+</div>
 
 <header>
   <span class="logo">🏸</span>
@@ -1376,14 +1665,25 @@ document.addEventListener('DOMContentLoaded', loadAll);
   </div>
 
   <div id="tabRanking" class="tab" style="display:none">
-    <div class="row"><h2>Classement</h2><button class="btn-export" onclick="exportCSV()">⬇ CSV</button></div>
+    <div class="row">
+      <h2>Classement</h2>
+      <div style="display:flex;gap:8px">
+        <button class="btn-export" onclick="exportCSV()">⬇ CSV</button>
+        <button class="btn-export" style="border-color:rgba(16,185,129,0.4);color:var(--green);background:rgba(16,185,129,0.08)" onclick="downloadBackup()">💾 JSON</button>
+      </div>
+    </div>
     <div class="filter-bar" id="rankingFilters"></div>
     <div id="rankingList"></div>
     <div class="qr-box" id="qrBox"></div>
   </div>
 
   <div id="tabHistory" class="tab" style="display:none">
-    <h2>Historique</h2>
+    <div class="row">
+      <h2>Bilans joueurs</h2>
+      <select class="mini-select" id="histGroupFilter" onchange="renderHistory()">
+        <option value="all">Tous</option>
+      </select>
+    </div>
     <input type="text" id="histSearch" placeholder="🔍 Rechercher un joueur…" oninput="renderHistory()"/>
     <div id="historyList"></div>
   </div>
