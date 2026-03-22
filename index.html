@@ -1692,7 +1692,15 @@ function changeGroup() {
 }
 window.changeGroup = changeGroup;
 
-document.addEventListener('DOMContentLoaded', () => {
+// Sauvegarde automatique quand on quitte l'app
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && Object.keys(players).length > 0) {
+    downloadBackup();
+  }
+});
+window.addEventListener('beforeunload', () => {
+  if (Object.keys(players).length > 0) downloadBackup();
+});
   if (sessionStorage.getItem('pin_ok') === '1') {
     document.getElementById('pinScreen').style.display = 'none';
     loadAll().then(() => {
