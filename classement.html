@@ -115,7 +115,7 @@
   <span style="font-size:26px">🏸</span>
   <div>
     <div class="header-title">BadmintonRank</div>
-    <div class="header-sub">Classement en direct</div>
+    <div class="header-sub" id="headerSub">Classement en direct</div>
   </div>
   <div class="live-dot" title="Temps réel"></div>
 </header>
@@ -131,11 +131,15 @@
 const BIN_ID  = "69bc8057c3097a1dd53f20db";
 const API_KEY = "$2a$10$XTzK1mpZw16YKGNxiOp3ue/eOxXfkyxefdDl6NFPLfhZVRBPTVVne";
 const BIN_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
-const PUBLIC_URL = "https://tribet31.github.io/BadmintonStaps31/classement.html";
-const QR_URL = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(PUBLIC_URL)}`;
+const BASE_URL = "https://tribet31.github.io/BadmintonStaps31/classement.html";
+
+// Lire le paramètre ?groupe= dans l'URL
+const urlParams = new URLSearchParams(window.location.search);
+const groupeParam = urlParams.get('groupe') || '';
 
 let allPlayers = {}, allGroups = {};
-let currentGroup = "all", searchQuery = "";
+let currentGroup = 'all';
+let searchQuery = '';
 let initialized = false;
 
 function objArr(obj) { return obj ? Object.entries(obj).map(([id,v])=>({...v,id})) : []; }
@@ -148,6 +152,13 @@ async function loadData() {
     const d = j.record || {};
     allPlayers = d.players || {};
     allGroups  = d.groups  || {};
+
+    // Appliquer le filtre groupe depuis l'URL si présent
+    if (!initialized && groupeParam) {
+      const gArr = objArr(allGroups);
+      const found = gArr.find(g => g.name.toLowerCase() === groupeParam.toLowerCase());
+      if (found) currentGroup = found.id;
+    }
     initialized = true;
     render();
   } catch(e) {
@@ -163,21 +174,34 @@ function render() {
   const now = new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const gArr = objArr(allGroups);
 
+  // Groupe actif
+  const activeGrp = currentGroup !== 'all' ? allGroups[currentGroup] : null;
+
+  // Mettre à jour le sous-titre du header
+  const sub = document.getElementById('headerSub');
+  if (sub) sub.textContent = activeGrp ? activeGrp.name : 'Classement en direct';
+
   let players = objArr(allPlayers).sort((a,b)=>b.elo-a.elo);
 
   // Filtre groupe
   if (currentGroup !== 'all') {
-    const grp = allGroups[currentGroup];
-    players = players.filter(p=>(grp?.playerIds||[]).includes(p.id));
+    players = players.filter(p=>(allGroups[currentGroup]?.playerIds||[]).includes(p.id));
   }
 
   // Filtre recherche
   if (searchQuery) players = players.filter(p=>p.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  const total = objArr(allPlayers).length;
-  const females = objArr(allPlayers).filter(p=>p.gender==='F').length;
-  const totalMatches = Math.round(objArr(allPlayers).reduce((a,p)=>a+(p.played||0),0)/2);
+  // Stats sur le groupe filtré
+  const total = players.length;
+  const females = players.filter(p=>p.gender==='F').length;
+  const totalMatches = Math.round(players.reduce((a,p)=>a+(p.played||0),0)/2);
   const medals = ['🥇','🥈','🥉'];
+
+  // URL et QR du groupe actif
+  const PUBLIC_URL = activeGrp
+    ? `${BASE_URL}?groupe=${encodeURIComponent(activeGrp.name)}`
+    : BASE_URL;
+  const QR_URL = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(PUBLIC_URL)}`;
 
   let html = `<div class="update-bar">🔄 Mis à jour à ${now}</div>`;
 
@@ -205,9 +229,8 @@ function render() {
     html += `<div class="empty">Aucun joueur trouvé</div>`;
   } else {
     players.forEach((p, i) => {
-      const grp = getPlayerGroup(p.id);
       const wr = p.played ? Math.round(p.wins/p.played*100) : 0;
-      const isTop3 = i < 3 && currentGroup === 'all' && !searchQuery;
+      const isTop3 = i < 3 && !searchQuery;
       const avatarBg = p.gender==='F' ? 'var(--female)' : 'var(--male)';
       html += `
         <div class="rank-card ${isTop3?'top3':''}" style="animation-delay:${i*35}ms">
@@ -221,8 +244,7 @@ function render() {
             <div class="rank-name">${p.name}</div>
             <div class="rank-meta">
               ${p.gender==='F'?'♀ Femme':'♂ Homme'}
-              ${grp?`· <span class="rank-group">${grp.name}</span>`:''}
-              · ${p.wins||0}V ${p.losses||0}D
+              · ${p.wins||0}V ${p.losses||0}D · ${wr}%
             </div>
             <div class="win-bar-bg"><div class="win-bar-fill" style="width:${wr}%"></div></div>
           </div>
@@ -238,10 +260,9 @@ function render() {
   // QR code
   html += `
     <div class="qr-box">
-      <div style="font-weight:700;font-size:15px">📱 Partager ce classement</div>
+      <div style="font-weight:700;font-size:15px">📱 ${activeGrp ? activeGrp.name : 'Classement général'}</div>
       <div style="font-size:12px;color:var(--muted);text-align:center">Scannez pour ouvrir sur votre téléphone</div>
       <img src="${QR_URL}" class="qr-img" width="200" height="200" alt="QR Code"/>
-      <div style="font-size:11px;color:var(--muted);word-break:break-all">${PUBLIC_URL}</div>
       <button class="btn-share" onclick="navigator.clipboard?.writeText('${PUBLIC_URL}').then(()=>this.textContent='✓ Lien copié !').catch(()=>{})">
         📋 Copier le lien
       </button>
