@@ -169,20 +169,20 @@
     .player-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
       padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: 64px; }
 
-    /* PLAYER GRID — 3 colonnes, boutons bien tactiles */
-    .player-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    /* PLAYER GRID — 6 colonnes compactes pour voir 18 joueurs sans scroller */
+    .player-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
     .player-grid-btn {
-      background: var(--card); border: 2px solid var(--border); border-radius: 14px;
-      padding: 12px 6px; display: flex; flex-direction: column; align-items: center; gap: 7px;
+      background: var(--card); border: 2px solid var(--border); border-radius: 10px;
+      padding: 6px 3px; display: flex; flex-direction: column; align-items: center; gap: 4px;
       cursor: pointer; transition: transform .1s; font-family: 'DM Sans', sans-serif;
-      min-height: 88px;
+      min-height: 64px;
     }
     .player-grid-btn:active { transform: scale(.93); }
     .player-grid-btn.selected-p1 { border-color: var(--green); background: rgba(16,185,129,.12); }
     .player-grid-btn.selected-p2 { border-color: var(--accent); background: rgba(245,158,11,.12); }
     .player-grid-btn.disabled { opacity: .3; pointer-events: none; }
-    .player-grid-btn .pgname { font-size: 12px; font-weight: 700; color: var(--text); text-align: center; line-height: 1.3; word-break: break-word; }
-    .player-grid-btn .pgelo { font-size: 10px; color: var(--muted); }
+    .player-grid-btn .pgname { font-size: 9px; font-weight: 700; color: var(--text); text-align: center; line-height: 1.2; word-break: break-word; }
+    .player-grid-btn .pgelo { font-size: 8px; color: var(--muted); }
 
     /* RANKING */
     .rank-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
@@ -784,7 +784,7 @@ function renderPlayerGrid(pArr) {
       ${sorted.map(p => {
         const avatarBg = p.gender==='F' ? 'var(--female)' : 'var(--male)';
         return `<button class="player-grid-btn disabled" style="opacity:.4;cursor:not-allowed">
-          <div class="avatar" style="width:38px;height:38px;font-size:16px;background:${avatarBg}">
+          <div class="avatar" style="width:28px;height:28px;font-size:13px;background:${avatarBg}">
             ${p.name[0].toUpperCase()}
           </div>
           <span class="pgname">${p.name}</span>
@@ -810,8 +810,8 @@ function renderPlayerGrid(pArr) {
     const badge = p.id===matchP1Id ? '✓1' : p.id===matchP2Id ? '✓2' : '';
     return `
       <button class="${cls}" onclick="selectPlayer('${p.id}')">
-        <div class="avatar" style="width:38px;height:38px;font-size:16px;background:${avatarBg};position:relative">
-          ${badge ? `<span style="position:absolute;top:-4px;right:-4px;background:${p.id===matchP1Id?'var(--green)':'var(--accent)'};color:#000;border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center">${badge}</span>` : ''}
+        <div class="avatar" style="width:28px;height:28px;font-size:13px;background:${avatarBg};position:relative">
+          ${badge ? `<span style="position:absolute;top:-4px;right:-4px;background:${p.id===matchP1Id?'var(--green)':'var(--accent)'};color:#000;border-radius:50%;width:14px;height:14px;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center">${badge}</span>` : ''}
           ${p.name[0].toUpperCase()}
         </div>
         <span class="pgname">${p.name}</span>
