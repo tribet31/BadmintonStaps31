@@ -293,6 +293,90 @@
 <body>
 <div class="bg-glow"></div>
 
+<script>
+const CORRECT_PIN = '3181';
+let pinEntry = '';
+
+function pinPress(digit) {
+  if (pinEntry.length >= 4) return;
+  pinEntry += digit;
+  updatePinDots();
+  if (pinEntry.length === 4) {
+    setTimeout(checkPin, 150);
+  }
+}
+window.pinPress = pinPress;
+
+function pinDel() {
+  pinEntry = pinEntry.slice(0, -1);
+  updatePinDots();
+}
+window.pinDel = pinDel;
+
+function updatePinDots() {
+  for (let i = 0; i < 4; i++) {
+    const dot = document.getElementById(`pd${i}`);
+    dot.classList.toggle('filled', i < pinEntry.length);
+    dot.classList.remove('error');
+  }
+}
+
+function checkPin() {
+  if (pinEntry === CORRECT_PIN) {
+    sessionStorage.setItem('pin_ok', '1');
+    document.getElementById('pinScreen').style.display = 'none';
+    loadAll().then(() => showGroupSelector());
+  } else {
+    for (let i = 0; i < 4; i++) document.getElementById(`pd${i}`).classList.add('error');
+    document.getElementById('pinError').textContent = 'Code incorrect';
+    setTimeout(() => { pinEntry = ''; updatePinDots(); document.getElementById('pinError').textContent = ''; }, 800);
+  }
+}
+
+function showGroupSelector() {
+  const gArr = objArr(groups);
+  if (gArr.length === 0) { initActiveGroup(null); return; }
+
+  // Si groupe déjà actif en session, le reprendre directement
+  if (activeGroupId && groups[activeGroupId]) {
+    initActiveGroup(activeGroupId);
+    return;
+  }
+
+  const screen = document.getElementById('groupScreen');
+  const list = document.getElementById('groupBtnList');
+  screen.style.display = 'flex';
+
+  let selectedId = null;
+
+  list.innerHTML = gArr.map(g => `
+    <button class="group-sel-btn" id="gbtn_${g.id}" onclick="selectGroupBtn('${g.id}')">
+      <div class="avatar" style="width:38px;height:38px;font-size:15px;background:var(--accent);color:#000">
+        ${g.name[0].toUpperCase()}
+      </div>
+      <span class="gname">${g.name}</span>
+      <span class="gcount">${(g.playerIds||[]).length} joueurs</span>
+    </button>`).join('');
+}
+window.showGroupSelector = showGroupSelector;
+
+let selectedGroupId = null;
+function selectGroupBtn(id) {
+  selectedGroupId = id;
+  document.querySelectorAll('.group-sel-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById(`gbtn_${id}`)?.classList.add('selected');
+  const btn = document.getElementById('startGroupBtn');
+  btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';
+  const g = groups[id];
+  btn.textContent = `▶ Démarrer avec ${g?.name}`;
+}
+window.selectGroupBtn = selectGroupBtn;
+
+function confirmGroupSelection() {
+  if (!selectedGroupId) return;
+  initActiveGroup(selectedGroupId);
+}
+</script>
 <!-- ÉCRAN PIN -->
 <div class="pin-screen" id="pinScreen">
   <span style="font-size:48px">🏸</span>
@@ -1774,88 +1858,6 @@ function confirmDeleteMatch(id) {
 window.confirmDeleteMatch = confirmDeleteMatch;
 
 // ── PIN ───────────────────────────────────────────────────────────────────────
-const CORRECT_PIN = '3181';
-let pinEntry = '';
-
-function pinPress(digit) {
-  if (pinEntry.length >= 4) return;
-  pinEntry += digit;
-  updatePinDots();
-  if (pinEntry.length === 4) {
-    setTimeout(checkPin, 150);
-  }
-}
-window.pinPress = pinPress;
-
-function pinDel() {
-  pinEntry = pinEntry.slice(0, -1);
-  updatePinDots();
-}
-window.pinDel = pinDel;
-
-function updatePinDots() {
-  for (let i = 0; i < 4; i++) {
-    const dot = document.getElementById(`pd${i}`);
-    dot.classList.toggle('filled', i < pinEntry.length);
-    dot.classList.remove('error');
-  }
-}
-
-function checkPin() {
-  if (pinEntry === CORRECT_PIN) {
-    sessionStorage.setItem('pin_ok', '1');
-    document.getElementById('pinScreen').style.display = 'none';
-    loadAll().then(() => showGroupSelector());
-  } else {
-    for (let i = 0; i < 4; i++) document.getElementById(`pd${i}`).classList.add('error');
-    document.getElementById('pinError').textContent = 'Code incorrect';
-    setTimeout(() => { pinEntry = ''; updatePinDots(); document.getElementById('pinError').textContent = ''; }, 800);
-  }
-}
-
-function showGroupSelector() {
-  const gArr = objArr(groups);
-  if (gArr.length === 0) { initActiveGroup(null); return; }
-
-  // Si groupe déjà actif en session, le reprendre directement
-  if (activeGroupId && groups[activeGroupId]) {
-    initActiveGroup(activeGroupId);
-    return;
-  }
-
-  const screen = document.getElementById('groupScreen');
-  const list = document.getElementById('groupBtnList');
-  screen.style.display = 'flex';
-
-  let selectedId = null;
-
-  list.innerHTML = gArr.map(g => `
-    <button class="group-sel-btn" id="gbtn_${g.id}" onclick="selectGroupBtn('${g.id}')">
-      <div class="avatar" style="width:38px;height:38px;font-size:15px;background:var(--accent);color:#000">
-        ${g.name[0].toUpperCase()}
-      </div>
-      <span class="gname">${g.name}</span>
-      <span class="gcount">${(g.playerIds||[]).length} joueurs</span>
-    </button>`).join('');
-}
-window.showGroupSelector = showGroupSelector;
-
-let selectedGroupId = null;
-function selectGroupBtn(id) {
-  selectedGroupId = id;
-  document.querySelectorAll('.group-sel-btn').forEach(b => b.classList.remove('selected'));
-  document.getElementById(`gbtn_${id}`)?.classList.add('selected');
-  const btn = document.getElementById('startGroupBtn');
-  btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';
-  const g = groups[id];
-  btn.textContent = `▶ Démarrer avec ${g?.name}`;
-}
-window.selectGroupBtn = selectGroupBtn;
-
-function confirmGroupSelection() {
-  if (!selectedGroupId) return;
-  initActiveGroup(selectedGroupId);
-}
 window.confirmGroupSelection = confirmGroupSelection;
 
 function skipGroupSelection() {
