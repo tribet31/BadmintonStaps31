@@ -1789,14 +1789,13 @@ window.addEventListener('beforeunload', () => {
   if (Object.keys(players).length > 0) downloadBackup();
 });
 
-document.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('load', () => {
   if (sessionStorage.getItem('pin_ok') === '1') {
-    document.getElementById('pinScreen').style.display = 'none';
-    loadAll().then(() => {
-      // Toujours afficher l'écran de sélection de groupe au lancement
-      showGroupSelector();
-    });
+    const pinScreen = document.getElementById('pinScreen');
+    if (pinScreen) pinScreen.style.display = 'none';
+    loadAll().then(() => showGroupSelector());
   }
+  // Si pin_ok pas encore en session, l'écran PIN reste affiché par défaut
 });
 </script>
 </head>
