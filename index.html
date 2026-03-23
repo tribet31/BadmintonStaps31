@@ -289,7 +289,175 @@
     .pin-btn.zero { grid-column: 2; }
   </style>
 
-<script defer>
+</head>
+<body>
+<div class="bg-glow"></div>
+
+<!-- ÉCRAN PIN -->
+<div class="pin-screen" id="pinScreen">
+  <span style="font-size:48px">🏸</span>
+  <div style="font-size:20px;font-weight:800;color:var(--accent)">BadmintonRank</div>
+  <div style="font-size:13px;color:var(--muted)">Code enseignant</div>
+  <div class="pin-dots">
+    <div class="pin-dot" id="pd0"></div>
+    <div class="pin-dot" id="pd1"></div>
+    <div class="pin-dot" id="pd2"></div>
+    <div class="pin-dot" id="pd3"></div>
+  </div>
+  <div id="pinError" style="font-size:13px;color:var(--red);height:18px"></div>
+  <div class="pin-grid">
+    <button class="pin-btn" onclick="pinPress('1')">1</button>
+    <button class="pin-btn" onclick="pinPress('2')">2</button>
+    <button class="pin-btn" onclick="pinPress('3')">3</button>
+    <button class="pin-btn" onclick="pinPress('4')">4</button>
+    <button class="pin-btn" onclick="pinPress('5')">5</button>
+    <button class="pin-btn" onclick="pinPress('6')">6</button>
+    <button class="pin-btn" onclick="pinPress('7')">7</button>
+    <button class="pin-btn" onclick="pinPress('8')">8</button>
+    <button class="pin-btn" onclick="pinPress('9')">9</button>
+    <button class="pin-btn zero" onclick="pinPress('0')">0</button>
+    <button class="pin-btn del" onclick="pinDel()">⌫</button>
+  </div>
+</div>
+
+<!-- ÉCRAN SÉLECTION GROUPE -->
+<div class="group-screen" id="groupScreen" style="display:none">
+  <span style="font-size:40px">📁</span>
+  <div style="font-size:20px;font-weight:800;color:var(--accent)">Choisir le groupe</div>
+  <div style="font-size:13px;color:var(--muted);text-align:center">Sélectionnez le groupe pour ce cours</div>
+  <div class="group-btn-list" id="groupBtnList"></div>
+  <button id="startGroupBtn" class="btn-primary" style="max-width:320px;width:100%;opacity:.4;pointer-events:none" onclick="confirmGroupSelection()">
+    ▶ Démarrer le cours
+  </button>
+  <button style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;padding:8px" onclick="skipGroupSelection()">
+    Continuer sans groupe →
+  </button>
+</div>
+<header>
+  <span class="logo">🏸</span>
+  <div>
+    <div class="header-title">BadmintonRank</div>
+    <div class="header-sub" id="headerSub">Interface enseignant</div>
+  </div>
+  <div class="sync-dot" id="syncDot"></div>
+</header>
+
+<main>
+  <!-- LOADING -->
+  <div id="loadingScreen" class="loading-screen">
+    <span class="spin">🏸</span>
+    <div style="color:var(--accent);font-weight:700;font-size:18px">Chargement…</div>
+    <div id="loadingStatus" style="color:var(--muted);font-size:11px;margin-top:4px"></div>
+  </div>
+
+  <!-- TABS -->
+  <div id="tabMatch" class="tab" style="display:none">
+    <!-- BARRE DE SÉANCE -->
+    <div id="sessionBar" style="display:none" class="session-bar">
+      <div class="session-dot"></div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:700;color:var(--accent)" id="sessionTitle">Séance en cours</div>
+        <div style="font-size:11px;color:var(--muted)" id="sessionInfo">0 match joué</div>
+      </div>
+      <button class="btn-end-session" onclick="confirmEndSession()">🏁 Fin de séance</button>
+    </div>
+    <div id="noSessionBar" class="session-bar" style="background:rgba(16,185,129,0.06);border-color:rgba(16,185,129,0.2)">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600;color:var(--muted)">Aucune séance active</div>
+        <div style="font-size:11px;color:var(--muted)">Démarrez une séance pour activer le bonus d'activité</div>
+      </div>
+      <button onclick="startSession()" style="background:var(--green);color:#000;border:none;border-radius:12px;padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;min-height:44px">▶ Démarrer</button>
+    </div>
+
+    <div class="row">
+      <h2>Nouveau match</h2>
+      <select class="mini-select" id="matchGroupFilter" onchange="renderMatchTab()"><option value="all">Tous les groupes</option></select>
+    </div>
+
+    <!-- SELECTED PLAYERS BANNER -->
+    <div id="selectedBanner" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 14px">
+      <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px">
+        <div id="bannerP1" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="clearPlayer(1)">
+          <div id="bannerP1Avatar" class="avatar" style="width:44px;height:44px;font-size:19px;background:var(--muted)">?</div>
+          <span id="bannerP1Name" style="font-size:12px;color:var(--muted);text-align:center">Joueur 1</span>
+          <span id="bannerP1Elo" style="font-size:10px;color:var(--muted)"></span>
+        </div>
+        <div class="vs-circle" style="margin:0 auto">VS</div>
+        <div id="bannerP2" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="clearPlayer(2)">
+          <div id="bannerP2Avatar" class="avatar" style="width:44px;height:44px;font-size:19px;background:var(--muted)">?</div>
+          <span id="bannerP2Name" style="font-size:12px;color:var(--muted);text-align:center">Joueur 2</span>
+          <span id="bannerP2Elo" style="font-size:10px;color:var(--muted)"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- PLAYER GRID PICKER -->
+    <div id="playerPickerSection">
+      <div id="pickingLabel" style="font-size:12px;color:var(--accent);font-weight:700;text-align:center;padding:4px 0">Sélectionnez le Joueur 1</div>
+      <div id="playerGrid"></div>
+    </div>
+
+    <!-- SETS + SUBMIT (hidden until both selected) -->
+    <div id="matchFormSection" style="display:none;flex-direction:column;gap:12px">
+      <div class="card">
+        <div class="row"><span class="lbl">Scores par set</span><button class="btn-link" onclick="addSet()">+ Set</button></div>
+        <div id="setsContainer"></div>
+        <div id="scorePreview" style="display:none" class="score-preview"></div>
+      </div>
+      <button class="btn-primary" id="submitMatchBtn" onclick="submitMatch()">Valider le match</button>
+    </div>
+
+    <div class="hint" id="matchHint" style="display:none">💡 Ajoutez des joueurs dans l'onglet Joueurs</div>
+  </div>
+
+  <div id="tabPlayers" class="tab" style="display:none">
+    <div class="mini-tabs">
+      <button class="mini-tab active" id="ptabList" onclick="setPlayerSubTab('list')">👥 Joueurs</button>
+      <button class="mini-tab" id="ptabGroups" onclick="setPlayerSubTab('groups')">📁 Groupes</button>
+      <button class="mini-tab" id="ptabImport" onclick="setPlayerSubTab('import')">📥 Import</button>
+    </div>
+    <div id="playerListSection"></div>
+    <div id="playerGroupsSection" style="display:none"></div>
+    <div id="playerImportSection" style="display:none"></div>
+  </div>
+
+  <div id="tabRanking" class="tab" style="display:none">
+    <div class="row">
+      <h2>Classement</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-export" onclick="exportCSV()">⬇ CSV</button>
+        <button class="btn-export" style="border-color:rgba(16,185,129,0.4);color:var(--green);background:rgba(16,185,129,0.08)" onclick="downloadBackup()">💾 JSON</button>
+        <button class="btn-export" style="border-color:rgba(59,130,246,0.4);color:var(--male);background:rgba(59,130,246,0.08)" onclick="restoreFromBackup()">♻️ Restaurer</button>
+      </div>
+    </div>
+    <div class="filter-bar" id="rankingFilters"></div>
+    <div id="rankingList"></div>
+    <div class="qr-box" id="qrBox"></div>
+  </div>
+
+  <div id="tabHistory" class="tab" style="display:none">
+    <div class="row">
+      <h2>Bilans joueurs</h2>
+      <select class="mini-select" id="histGroupFilter" onchange="renderHistory()">
+        <option value="all">Tous</option>
+      </select>
+    </div>
+    <input type="text" id="histSearch" placeholder="🔍 Rechercher un joueur…" oninput="renderHistory()"/>
+    <div id="historyList"></div>
+  </div>
+</main>
+
+<nav>
+  <button class="nav-btn active" id="navMatch" onclick="setTab('Match')"><span class="nav-icon">🏸</span><span class="nav-label">Match</span></button>
+  <button class="nav-btn" id="navPlayers" onclick="setTab('Players')"><span class="nav-icon">👥</span><span class="nav-label">Joueurs</span></button>
+  <button class="nav-btn" id="navRanking" onclick="setTab('Ranking')"><span class="nav-icon">🏆</span><span class="nav-label">Classement</span></button>
+  <button class="nav-btn" id="navHistory" onclick="setTab('History')"><span class="nav-icon">📋</span><span class="nav-label">Historique</span></button>
+</nav>
+
+<div class="toast hidden" id="toast"></div>
+<div class="modal hidden" id="modal"><div class="modal-box" id="modalBox"></div></div>
+
+<script>
 // ── JSONBIN API ───────────────────────────────────────────────────────────────
 const BIN_ID  = "69bc8057c3097a1dd53f20db";
 const API_KEY = "$2a$10$XTzK1mpZw16YKGNxiOp3ue/eOxXfkyxefdDl6NFPLfhZVRBPTVVne";
@@ -1798,173 +1966,5 @@ window.addEventListener('load', () => {
   // Si pin_ok pas encore en session, l'écran PIN reste affiché par défaut
 });
 </script>
-</head>
-<body>
-<div class="bg-glow"></div>
-
-<!-- ÉCRAN PIN -->
-<div class="pin-screen" id="pinScreen">
-  <span style="font-size:48px">🏸</span>
-  <div style="font-size:20px;font-weight:800;color:var(--accent)">BadmintonRank</div>
-  <div style="font-size:13px;color:var(--muted)">Code enseignant</div>
-  <div class="pin-dots">
-    <div class="pin-dot" id="pd0"></div>
-    <div class="pin-dot" id="pd1"></div>
-    <div class="pin-dot" id="pd2"></div>
-    <div class="pin-dot" id="pd3"></div>
-  </div>
-  <div id="pinError" style="font-size:13px;color:var(--red);height:18px"></div>
-  <div class="pin-grid">
-    <button class="pin-btn" onclick="pinPress('1')">1</button>
-    <button class="pin-btn" onclick="pinPress('2')">2</button>
-    <button class="pin-btn" onclick="pinPress('3')">3</button>
-    <button class="pin-btn" onclick="pinPress('4')">4</button>
-    <button class="pin-btn" onclick="pinPress('5')">5</button>
-    <button class="pin-btn" onclick="pinPress('6')">6</button>
-    <button class="pin-btn" onclick="pinPress('7')">7</button>
-    <button class="pin-btn" onclick="pinPress('8')">8</button>
-    <button class="pin-btn" onclick="pinPress('9')">9</button>
-    <button class="pin-btn zero" onclick="pinPress('0')">0</button>
-    <button class="pin-btn del" onclick="pinDel()">⌫</button>
-  </div>
-</div>
-
-<!-- ÉCRAN SÉLECTION GROUPE -->
-<div class="group-screen" id="groupScreen" style="display:none">
-  <span style="font-size:40px">📁</span>
-  <div style="font-size:20px;font-weight:800;color:var(--accent)">Choisir le groupe</div>
-  <div style="font-size:13px;color:var(--muted);text-align:center">Sélectionnez le groupe pour ce cours</div>
-  <div class="group-btn-list" id="groupBtnList"></div>
-  <button id="startGroupBtn" class="btn-primary" style="max-width:320px;width:100%;opacity:.4;pointer-events:none" onclick="confirmGroupSelection()">
-    ▶ Démarrer le cours
-  </button>
-  <button style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;padding:8px" onclick="skipGroupSelection()">
-    Continuer sans groupe →
-  </button>
-</div>
-<header>
-  <span class="logo">🏸</span>
-  <div>
-    <div class="header-title">BadmintonRank</div>
-    <div class="header-sub" id="headerSub">Interface enseignant</div>
-  </div>
-  <div class="sync-dot" id="syncDot"></div>
-</header>
-
-<main>
-  <!-- LOADING -->
-  <div id="loadingScreen" class="loading-screen">
-    <span class="spin">🏸</span>
-    <div style="color:var(--accent);font-weight:700;font-size:18px">Chargement…</div>
-    <div id="loadingStatus" style="color:var(--muted);font-size:11px;margin-top:4px"></div>
-  </div>
-
-  <!-- TABS -->
-  <div id="tabMatch" class="tab" style="display:none">
-    <!-- BARRE DE SÉANCE -->
-    <div id="sessionBar" style="display:none" class="session-bar">
-      <div class="session-dot"></div>
-      <div style="flex:1">
-        <div style="font-size:13px;font-weight:700;color:var(--accent)" id="sessionTitle">Séance en cours</div>
-        <div style="font-size:11px;color:var(--muted)" id="sessionInfo">0 match joué</div>
-      </div>
-      <button class="btn-end-session" onclick="confirmEndSession()">🏁 Fin de séance</button>
-    </div>
-    <div id="noSessionBar" class="session-bar" style="background:rgba(16,185,129,0.06);border-color:rgba(16,185,129,0.2)">
-      <div style="flex:1">
-        <div style="font-size:13px;font-weight:600;color:var(--muted)">Aucune séance active</div>
-        <div style="font-size:11px;color:var(--muted)">Démarrez une séance pour activer le bonus d'activité</div>
-      </div>
-      <button onclick="startSession()" style="background:var(--green);color:#000;border:none;border-radius:12px;padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;min-height:44px">▶ Démarrer</button>
-    </div>
-
-    <div class="row">
-      <h2>Nouveau match</h2>
-      <select class="mini-select" id="matchGroupFilter" onchange="renderMatchTab()"><option value="all">Tous les groupes</option></select>
-    </div>
-
-    <!-- SELECTED PLAYERS BANNER -->
-    <div id="selectedBanner" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 14px">
-      <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px">
-        <div id="bannerP1" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="clearPlayer(1)">
-          <div id="bannerP1Avatar" class="avatar" style="width:44px;height:44px;font-size:19px;background:var(--muted)">?</div>
-          <span id="bannerP1Name" style="font-size:12px;color:var(--muted);text-align:center">Joueur 1</span>
-          <span id="bannerP1Elo" style="font-size:10px;color:var(--muted)"></span>
-        </div>
-        <div class="vs-circle" style="margin:0 auto">VS</div>
-        <div id="bannerP2" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="clearPlayer(2)">
-          <div id="bannerP2Avatar" class="avatar" style="width:44px;height:44px;font-size:19px;background:var(--muted)">?</div>
-          <span id="bannerP2Name" style="font-size:12px;color:var(--muted);text-align:center">Joueur 2</span>
-          <span id="bannerP2Elo" style="font-size:10px;color:var(--muted)"></span>
-        </div>
-      </div>
-    </div>
-
-    <!-- PLAYER GRID PICKER -->
-    <div id="playerPickerSection">
-      <div id="pickingLabel" style="font-size:12px;color:var(--accent);font-weight:700;text-align:center;padding:4px 0">Sélectionnez le Joueur 1</div>
-      <div id="playerGrid"></div>
-    </div>
-
-    <!-- SETS + SUBMIT (hidden until both selected) -->
-    <div id="matchFormSection" style="display:none;flex-direction:column;gap:12px">
-      <div class="card">
-        <div class="row"><span class="lbl">Scores par set</span><button class="btn-link" onclick="addSet()">+ Set</button></div>
-        <div id="setsContainer"></div>
-        <div id="scorePreview" style="display:none" class="score-preview"></div>
-      </div>
-      <button class="btn-primary" id="submitMatchBtn" onclick="submitMatch()">Valider le match</button>
-    </div>
-
-    <div class="hint" id="matchHint" style="display:none">💡 Ajoutez des joueurs dans l'onglet Joueurs</div>
-  </div>
-
-  <div id="tabPlayers" class="tab" style="display:none">
-    <div class="mini-tabs">
-      <button class="mini-tab active" id="ptabList" onclick="setPlayerSubTab('list')">👥 Joueurs</button>
-      <button class="mini-tab" id="ptabGroups" onclick="setPlayerSubTab('groups')">📁 Groupes</button>
-      <button class="mini-tab" id="ptabImport" onclick="setPlayerSubTab('import')">📥 Import</button>
-    </div>
-    <div id="playerListSection"></div>
-    <div id="playerGroupsSection" style="display:none"></div>
-    <div id="playerImportSection" style="display:none"></div>
-  </div>
-
-  <div id="tabRanking" class="tab" style="display:none">
-    <div class="row">
-      <h2>Classement</h2>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn-export" onclick="exportCSV()">⬇ CSV</button>
-        <button class="btn-export" style="border-color:rgba(16,185,129,0.4);color:var(--green);background:rgba(16,185,129,0.08)" onclick="downloadBackup()">💾 JSON</button>
-        <button class="btn-export" style="border-color:rgba(59,130,246,0.4);color:var(--male);background:rgba(59,130,246,0.08)" onclick="restoreFromBackup()">♻️ Restaurer</button>
-      </div>
-    </div>
-    <div class="filter-bar" id="rankingFilters"></div>
-    <div id="rankingList"></div>
-    <div class="qr-box" id="qrBox"></div>
-  </div>
-
-  <div id="tabHistory" class="tab" style="display:none">
-    <div class="row">
-      <h2>Bilans joueurs</h2>
-      <select class="mini-select" id="histGroupFilter" onchange="renderHistory()">
-        <option value="all">Tous</option>
-      </select>
-    </div>
-    <input type="text" id="histSearch" placeholder="🔍 Rechercher un joueur…" oninput="renderHistory()"/>
-    <div id="historyList"></div>
-  </div>
-</main>
-
-<nav>
-  <button class="nav-btn active" id="navMatch" onclick="setTab('Match')"><span class="nav-icon">🏸</span><span class="nav-label">Match</span></button>
-  <button class="nav-btn" id="navPlayers" onclick="setTab('Players')"><span class="nav-icon">👥</span><span class="nav-label">Joueurs</span></button>
-  <button class="nav-btn" id="navRanking" onclick="setTab('Ranking')"><span class="nav-icon">🏆</span><span class="nav-label">Classement</span></button>
-  <button class="nav-btn" id="navHistory" onclick="setTab('History')"><span class="nav-icon">📋</span><span class="nav-label">Historique</span></button>
-</nav>
-
-<div class="toast hidden" id="toast"></div>
-<div class="modal hidden" id="modal"><div class="modal-box" id="modalBox"></div></div>
-
 </body>
 </html>
