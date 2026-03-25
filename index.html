@@ -608,7 +608,6 @@ async function run(fn, msg) {
   }
 }
 
-loadAll();
 // ── ELO ──────────────────────────────────────────────────────────────────────
 function expectedScore(rA, rB) { return 1/(1+Math.pow(10,(rB-rA)/400)); }
 function computeElo(winner, loser, loserSets) {
@@ -858,11 +857,6 @@ window.applyEndSession = applyEndSession;
 function objArr(obj) { return obj ? Object.entries(obj).map(([id,v])=>({...v,id})) : []; }
 function sortedPlayers() { return objArr(players).sort((a,b)=>b.elo-a.elo); }
 function getPlayerGroup(id) { return objArr(groups).find(g=>(g.playerIds||[]).includes(id)); }
-
-function setSyncing(on) {
-  const dot = document.getElementById('syncDot');
-  dot.classList.toggle('syncing', on);
-}
 
 let toastTimer;
 function showToast(msg, type='ok') {
@@ -1859,6 +1853,8 @@ async function deployToGithub() {
   }
 }
 window.deployToGithub = deployToGithub;
+
+function changeGroup() {
   activeGroupId = null;
   sessionStorage.removeItem('activeGroupId');
   selectedGroupId = null;
