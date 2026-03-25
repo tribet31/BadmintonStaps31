@@ -494,7 +494,7 @@ async function loadAll() {
     matches = _data.matches || {};
     groups  = _data.groups  || {};
     document.getElementById('loadingScreen').style.display = 'none';
-    setInterval(pollData, 30000);
+    setInterval(pollData, 60000);
     return true;
   } catch(e) {
     document.getElementById('loadingScreen').innerHTML = `
@@ -529,12 +529,16 @@ async function pollData() {
     players = d.players || {};
     matches = d.matches || {};
     groups  = d.groups  || {};
-    // Restaurer activeGroupId depuis sessionStorage si perdu
+    // Ne jamais écraser activeGroupId dans le poll — sessionStorage fait foi
     if (!activeGroupId) {
       const stored = sessionStorage.getItem('activeGroupId');
       if (stored) activeGroupId = stored;
     }
-    if (currentTab === 'Match')   renderMatchTab();
+    // Ne pas re-rendre la grille de match si une saisie de joueur est en cours
+    if (currentTab === 'Match') {
+      if (!matchP1Id && !matchP2Id) renderMatchTab();
+      else { updateSessionBar(); updateBanner(); }
+    }
     if (currentTab === 'Players') renderPlayers();
     if (currentTab === 'Ranking') renderRanking();
     if (currentTab === 'History') renderHistory();
