@@ -480,6 +480,7 @@ let session = null;
 let matchP1Id = '', matchP2Id = '';
 let importList = [];
 let activeGroupId = null; // Toujours null au lancement
+let cachedGroupPlayers = null; // Cache de la liste filtrée du groupe actif
 
 async function loadAll() {
   document.getElementById('loadingStatus').textContent = 'Chargement…';
@@ -534,10 +535,11 @@ async function pollData() {
       const stored = sessionStorage.getItem('activeGroupId');
       if (stored) activeGroupId = stored;
     }
-    // Ne pas re-rendre la grille de match si une saisie de joueur est en cours
+    // Onglet Match : le cache cachedGroupPlayers est stable, inutile de re-rendre la grille.
+    // On met juste à jour la barre de séance et le bandeau joueurs si besoin.
     if (currentTab === 'Match') {
-      if (!matchP1Id && !matchP2Id) renderMatchTab();
-      else { updateSessionBar(); updateBanner(); }
+      updateSessionBar();
+      if (!matchP1Id && !matchP2Id) updateBanner();
     }
     if (currentTab === 'Players') renderPlayers();
     if (currentTab === 'Ranking') renderRanking();
@@ -904,23 +906,27 @@ window.setTab = setTab;
 
 // ── MATCH TAB ────────────────────────────────────────────────────────────────
 function renderMatchTab() {
+  // Si groupe actif : utiliser le cache — aucun recalcul, aucun accès réseau
+  if (activeGroupId) {
+    const filterSel = document.getElementById('matchGroupFilter');
+    if (filterSel) filterSel.style.display = 'none';
+    const visible = cachedGroupPlayers || [];
+    document.getElementById('matchHint').style.display = visible.length < 2 ? 'block' : 'none';
+    updateSessionBar();
+    renderPlayerGrid(visible);
+    updateBanner();
+    updateMatchFormVisibility();
+    return;
+  }
+
+  // Sans groupe actif : mode libre, select dynamique
   const pArr = objArr(players);
   const gArr = objArr(groups);
   const filterSel = document.getElementById('matchGroupFilter');
-
-  // Si groupe actif — verrouiller dessus, masquer le select
-  if (activeGroupId) {
-    if (filterSel) filterSel.style.display = 'none';
-  } else {
-    if (filterSel) {
-      filterSel.style.display = gArr.length > 0 ? 'block' : 'none';
-      filterSel.innerHTML = '<option value="all">Tous</option>' +
-        gArr.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
-    }
-  }
-
-  // Restaurer la valeur du select après reconstruction du innerHTML
-  if (filterSel && !activeGroupId) {
+  if (filterSel) {
+    filterSel.style.display = gArr.length > 0 ? 'block' : 'none';
+    filterSel.innerHTML = '<option value="all">Tous</option>' +
+      gArr.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
     const savedFilter = filterSel.dataset.lastFilter || 'all';
     filterSel.value = savedFilter;
     filterSel.onchange = function() {
@@ -928,7 +934,7 @@ function renderMatchTab() {
       renderMatchTab();
     };
   }
-  const curFilter = activeGroupId || (filterSel?.value) || 'all';
+  const curFilter = (filterSel?.value) || 'all';
   const visible = curFilter === 'all' ? pArr
     : pArr.filter(p => (groups[curFilter]?.playerIds||[]).includes(p.id));
 
@@ -1014,11 +1020,7 @@ function selectPlayer(id) {
   }
   updateBanner();
   updateMatchFormVisibility();
-  const pArr = objArr(players);
-  const filterSel = document.getElementById('matchGroupFilter');
-  const curFilter = filterSel ? filterSel.value || 'all' : 'all';
-  const gArr = objArr(groups);
-  const visible = curFilter==='all' ? pArr : pArr.filter(p=>(gArr.find(g=>g.id===curFilter)?.playerIds||[]).includes(p.id));
+  const visible = cachedGroupPlayers || objArr(players);
   renderPlayerGrid(visible);
 }
 window.selectPlayer = selectPlayer;
@@ -1026,11 +1028,7 @@ window.selectPlayer = selectPlayer;
 function clearPlayer(num) {
   if (num === 1) matchP1Id = '';
   else matchP2Id = '';
-  const pArr = objArr(players);
-  const filterSel = document.getElementById('matchGroupFilter');
-  const curFilter = filterSel ? filterSel.value || 'all' : 'all';
-  const gArr = objArr(groups);
-  const visible = curFilter==='all' ? pArr : pArr.filter(p=>(gArr.find(g=>g.id===curFilter)?.playerIds||[]).includes(p.id));
+  const visible = cachedGroupPlayers || objArr(players);
   renderPlayerGrid(visible);
   updateBanner();
   updateMatchFormVisibility();
@@ -1798,6 +1796,13 @@ function initActiveGroup(groupId) {
   activeGroupId = groupId;
   sessionStorage.setItem('activeGroupId', groupId || '');
   document.getElementById('groupScreen').style.display = 'none';
+  // Construire le cache une seule fois : liste des joueurs du groupe actif
+  if (groupId && groups[groupId]) {
+    const ids = groups[groupId].playerIds || [];
+    cachedGroupPlayers = objArr(players).filter(p => ids.includes(p.id));
+  } else {
+    cachedGroupPlayers = null;
+  }
   // Mettre à jour le header
   const g = groupId ? groups[groupId] : null;
   const sub = document.getElementById('headerSub');
@@ -1898,9 +1903,14 @@ window.addEventListener('load', () => {
       // Si un groupe était actif avant rechargement, le restaurer directement
       const stored = sessionStorage.getItem('activeGroupId');
       if (stored && stored !== '') {
+        // Reconstruire le cache après rechargement de page
         activeGroupId = stored;
-        const sub = document.getElementById('headerSub');
-        if (sub && groups[stored]) sub.textContent = `📁 ${groups[stored].name}`;
+        if (groups[stored]) {
+          const ids = groups[stored].playerIds || [];
+          cachedGroupPlayers = objArr(players).filter(p => ids.includes(p.id));
+          const sub = document.getElementById('headerSub');
+          if (sub) sub.textContent = `📁 ${groups[stored].name}`;
+        }
         setTab('Match');
       } else {
         showGroupSelector();
