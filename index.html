@@ -1,4 +1,4 @@
-PE html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8"/>
@@ -1877,8 +1877,14 @@ window.addEventListener('beforeunload', () => {
 });
 
 window.addEventListener('load', () => {
+  if (sessionStorage.getItem('pin_ok') === '1') {
+    const pinScreen = document.getElementById('pinScreen');
+    if (pinScreen) pinScreen.style.display = 'none';
+    loadAll().then(() => showGroupSelector());
+  }
+});
 
-// ── PIN ──
+// ── PIN ──────────────────────────────────────────────────────────────────────
 const CORRECT_PIN = '3181';
 let pinEntry = '';
 
@@ -1921,19 +1927,9 @@ function checkPin() {
 function showGroupSelector() {
   const gArr = objArr(groups);
   if (gArr.length === 0) { initActiveGroup(null); return; }
-
-  // Si groupe déjà actif en session, le reprendre directement
-  if (activeGroupId && groups[activeGroupId]) {
-    initActiveGroup(activeGroupId);
-    return;
-  }
-
   const screen = document.getElementById('groupScreen');
   const list = document.getElementById('groupBtnList');
   screen.style.display = 'flex';
-
-  let selectedId = null;
-
   list.innerHTML = gArr.map(g => `
     <button class="group-sel-btn" id="gbtn_${g.id}" onclick="selectGroupBtn('${g.id}')">
       <div class="avatar" style="width:38px;height:38px;font-size:15px;background:var(--accent);color:#000">
@@ -1961,6 +1957,7 @@ function confirmGroupSelection() {
   if (!selectedGroupId) return;
   initActiveGroup(selectedGroupId);
 }
+window.confirmGroupSelection = confirmGroupSelection;
 </script>
 </body>
 </html>
