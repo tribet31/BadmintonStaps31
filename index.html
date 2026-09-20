@@ -587,7 +587,8 @@ async function loadAll() {
     matches = _data.matches || {};
     groups  = _data.groups  || {};
     sessionsHistory = _data.sessions || {};
-    if (repairCorruptedElo()) await saveAll();
+    const needsSave = migrateLegacyNames() | repairCorruptedElo();
+    if (needsSave) await saveAll();
     document.getElementById('loadingScreen').style.display = 'none';
     return true;
   } catch(e) {
@@ -620,12 +621,33 @@ async function saveAll() {
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 
 // ── Formatage des noms ───────────────────────────────────────────────────────
-// Convention de saisie : "NOM Prénom", le nom de famille en MAJUSCULES (ex : "TRIBET Hervé").
-// On repère le(s) mot(s) en majuscules pour isoler le nom de famille, quel que soit l'ordre
-// exact tapé — si aucun mot en majuscules n'est trouvé, on suppose par défaut que le premier
-// mot est le nom de famille (repli cohérent avec la convention de saisie).
-function splitName(fullName) {
-  const raw = String(fullName || '').trim();
+// Le joueur est stocké avec deux champs distincts : p.nom et p.prenom (saisis séparément,
+// ou importés depuis les colonnes CSV "nom;prenom;sexe;groupe").
+// Affichage complet, ordre "Prénom Nom" — utilisé dans les onglets/listes de l'app.
+function fullName(p) {
+  if (!p) return '';
+  const nom = String(p.nom || '').trim(), prenom = String(p.prenom || '').trim();
+  const combined = [prenom, nom].filter(Boolean).join(' ');
+  return combined || String(p.name || '').trim();
+}
+// Affichage court "Prénom N." — utilisé sur les boutons de saisie des matchs.
+function shortDisplay(p) {
+  if (!p) return '';
+  const nom = String(p.nom || '').trim(), prenom = String(p.prenom || '').trim();
+  if (prenom && nom) return `${prenom} ${nom[0].toUpperCase()}.`;
+  return prenom || nom || String(p.name || '').trim();
+}
+// Initiale utilisée dans les avatars ronds — celle du prénom (cohérent avec l'affichage "Prénom …").
+function avatarInitial(p) {
+  if (!p) return '?';
+  const src = String(p.prenom || '').trim() || String(p.nom || '').trim() || String(p.name || '').trim();
+  return src ? src[0].toUpperCase() : '?';
+}
+// Sépare un nom saisi comme un seul champ (ancien format, avant l'ajout du champ "prénom" séparé) :
+// convention "NOM Prénom", nom de famille en MAJUSCULES — utilisé uniquement pour migrer les
+// données existantes vers les champs nom/prenom séparés (voir migrateLegacyNames()).
+function legacySplitName(fullNameStr) {
+  const raw = String(fullNameStr || '').trim();
   if (!raw) return { prenom: '', nom: '' };
   const words = raw.split(/\s+/);
   if (words.length === 1) return { prenom: '', nom: words[0] };
@@ -637,22 +659,19 @@ function splitName(fullName) {
   if (i >= words.length) return { prenom: '', nom: words.join(' ') };
   return { prenom: words.slice(i).join(' '), nom: nomWords.join(' ') };
 }
-// Affichage complet, ordre "Prénom Nom" — utilisé dans les onglets/listes de l'app.
-function displayName(fullName) {
-  const { prenom, nom } = splitName(fullName);
-  return prenom ? `${prenom} ${nom}` : nom;
-}
-// Affichage court "Prénom N." — utilisé sur les boutons de saisie des matchs.
-function shortName(fullName) {
-  const { prenom, nom } = splitName(fullName);
-  if (!prenom || !nom) return String(fullName || '');
-  return `${prenom} ${nom.trim()[0].toUpperCase()}.`;
-}
-// Initiale utilisée dans les avatars ronds — celle du prénom (cohérent avec l'affichage "Prénom …").
-function nameInitial(fullName) {
-  const { prenom, nom } = splitName(fullName);
-  const src = prenom || nom;
-  return src ? src.trim()[0].toUpperCase() : '?';
+// Migre les joueurs enregistrés avant l'ajout du champ "prénom" séparé (qui n'avaient qu'un
+// champ "name" unique) vers les champs nom/prenom — sans quoi ces joueurs perdraient leur nom
+// à l'affichage. Ne touche pas les joueurs qui ont déjà des champs nom/prenom.
+function migrateLegacyNames() {
+  let migrated = false;
+  Object.values(players).forEach(p => {
+    if (typeof p.nom === 'string') return; // déjà migré
+    const { prenom, nom } = legacySplitName(p.name);
+    p.nom = nom;
+    p.prenom = prenom;
+    migrated = true;
+  });
+  return migrated;
 }
 
 // Helpers CRUD locaux + sync
@@ -782,10 +801,10 @@ function confirmEndSession() {
   const rows = recap.map(r => `
     <div class="session-player-row">
       <div class="avatar" style="width:36px;height:36px;font-size:14px;background:${r.gender==='F'?'var(--female)':'var(--male)'}">
-        ${nameInitial(r.name)}
+        ${avatarInitial(r)}
       </div>
       <div style="flex:1">
-        <div style="font-size:14px;font-weight:700">${displayName(r.name)}</div>
+        <div style="font-size:14px;font-weight:700">${fullName(r)}</div>
         <div style="font-size:11px;color:var(--muted)">${r.matchCount} match${r.matchCount>1?'s':''} · coeff. ${r.coeff.toFixed(2)}</div>
       </div>
       <div style="text-align:right">
@@ -830,7 +849,7 @@ function computeSessionRecap() {
       ? Math.round(rawDelta * coeff)
       : Math.round(rawDelta / coeff); // perd davantage s'il a peu joué
     const eloAdjust = adjustedDelta - rawDelta; // correction à appliquer
-    return { id, name: p.name, gender: p.gender, matchCount, coeff, rawDelta, adjustedDelta, eloAdjust };
+    return { id, nom: p.nom, prenom: p.prenom, gender: p.gender, matchCount, coeff, rawDelta, adjustedDelta, eloAdjust };
   }).filter(Boolean).sort((a,b) => b.matchCount - a.matchCount);
 }
 
@@ -845,20 +864,20 @@ function downloadBackup() {
     date: new Date().toISOString(),
     // ── Classement lisible ──
     classement: sorted.map((p,i) => ({
-      rang: i+1, nom: p.name, genre: p.gender==='F'?'Femme':'Homme',
+      rang: i+1, nom: p.nom||'', prenom: p.prenom||'', genre: p.gender==='F'?'Femme':'Homme',
       groupe: getGrp(p), elo: p.elo,
       victoires: p.wins||0, defaites: p.losses||0, matchs: p.played||0
     })),
     // ── Groupes lisibles ──
     groupes: gArr.map(g => ({
       nom: g.name,
-      joueurs: (g.playerIds||[]).map(id => players[id]?.name).filter(Boolean)
+      joueurs: (g.playerIds||[]).map(id => fullName(players[id])).filter(Boolean)
     })),
     // ── Matchs lisibles ──
     matchs: objArr(matches).sort((a,b)=>new Date(b.date)-new Date(a.date)).map(m=>({
       date: new Date(m.date).toLocaleDateString('fr-FR', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}),
-      vainqueur: players[m.winnerId]?.name||'?',
-      perdant: players[m.loserId]?.name||'?',
+      vainqueur: fullName(players[m.winnerId])||'?',
+      perdant: fullName(players[m.loserId])||'?',
       score: (m.sets||[]).map(s=>`${s.s1}-${s.s2}`).join(' '),
       deltaV: m.winnerDelta, deltaP: m.loserDelta
     })),
@@ -957,6 +976,7 @@ async function saveAllData(data) {
   matches = _data.matches;
   groups  = _data.groups;
   sessionsHistory = _data.sessions;
+  migrateLegacyNames();
   if (repairCorruptedElo()) showToast('Certains points ont été recalculés (données restaurées)', 'err');
   await saveAll();
 }
@@ -981,7 +1001,7 @@ function applyEndSession() {
     await fbPush('sessions', {
       date: new Date().toISOString(),
       matchIds: session.matchIds,
-      recap: recap.map(r => ({id:r.id, name:r.name, matchCount:r.matchCount, coeff:r.coeff, eloAdjust:r.eloAdjust}))
+      recap: recap.map(r => ({id:r.id, nom:r.nom, prenom:r.prenom, matchCount:r.matchCount, coeff:r.coeff, eloAdjust:r.eloAdjust}))
     });
     session = null;
     updateSessionBar();
@@ -1099,9 +1119,9 @@ function renderPlayerGrid(pArr) {
         const avatarBg = p.gender==='F' ? 'var(--female)' : 'var(--male)';
         return `<button class="player-grid-btn disabled" style="opacity:.4;cursor:not-allowed">
           <div class="avatar" style="width:28px;height:28px;font-size:13px;background:${avatarBg}">
-            ${nameInitial(p.name)}
+            ${avatarInitial(p)}
           </div>
-          <span class="pgname">${shortName(p.name)}</span>
+          <span class="pgname">${shortDisplay(p)}</span>
           <span class="pgelo">${p.elo} pts</span>
         </button>`;
       }).join('')}`;
@@ -1126,9 +1146,9 @@ function renderPlayerGrid(pArr) {
       <button class="${cls}" onclick="selectPlayer('${p.id}')">
         <div class="avatar" style="width:28px;height:28px;font-size:13px;background:${avatarBg};position:relative">
           ${badge ? `<span style="position:absolute;top:-4px;right:-4px;background:${p.id===matchP1Id?'var(--green)':'var(--accent)'};color:#000;border-radius:50%;width:14px;height:14px;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center">${badge}</span>` : ''}
-          ${nameInitial(p.name)}
+          ${avatarInitial(p)}
         </div>
-        <span class="pgname">${shortName(p.name)}</span>
+        <span class="pgname">${shortDisplay(p)}</span>
         <span class="pgelo">${p.elo} pts</span>
       </button>`;
   }).join('');
@@ -1179,8 +1199,8 @@ function updateBanner() {
   const e1 = document.getElementById('bannerP1Elo');
   if (pl1) {
     a1.style.background = pl1.gender==='F' ? 'var(--female)' : 'var(--male)';
-    a1.textContent = nameInitial(pl1.name);
-    n1.style.color = 'var(--green)'; n1.textContent = shortName(pl1.name);
+    a1.textContent = avatarInitial(pl1);
+    n1.style.color = 'var(--green)'; n1.textContent = shortDisplay(pl1);
     e1.textContent = pl1.elo + ' pts';
   } else {
     a1.style.background = 'var(--muted)'; a1.textContent = '?';
@@ -1194,8 +1214,8 @@ function updateBanner() {
   const e2 = document.getElementById('bannerP2Elo');
   if (pl2) {
     a2.style.background = pl2.gender==='F' ? 'var(--female)' : 'var(--male)';
-    a2.textContent = nameInitial(pl2.name);
-    n2.style.color = 'var(--accent)'; n2.textContent = shortName(pl2.name);
+    a2.textContent = avatarInitial(pl2);
+    n2.style.color = 'var(--accent)'; n2.textContent = shortDisplay(pl2);
     e2.textContent = pl2.elo + ' pts';
   } else {
     a2.style.background = 'var(--muted)'; a2.textContent = '?';
@@ -1261,7 +1281,7 @@ function updateMatchPreview() {
   const prev = document.getElementById('scorePreview');
   if(w1>0||w2>0){
     prev.style.display='flex';
-    const winnerName = w1>w2?(pl1?.name?shortName(pl1.name):'J1'):w2>w1?(pl2?.name?shortName(pl2.name):'J2'):'';
+    const winnerName = w1>w2?(pl1?shortDisplay(pl1):'J1'):w2>w1?(pl2?shortDisplay(pl2):'J2'):'';
     prev.innerHTML=`
       <span class="${w1>w2?'score-w':'score-l'}">${w1}</span>
       <span style="color:var(--muted);font-size:18px;margin:0 6px">–</span>
@@ -1293,7 +1313,7 @@ function submitMatch() {
     const btn=document.getElementById('submitMatchBtn');
     btn.textContent='✓ Match enregistré !'; btn.style.background='var(--green)';
     setTimeout(()=>{btn.textContent='Valider le match';btn.style.background='';},2500);
-  }, `+${dW} pts pour ${shortName(winner.name)} !`);
+  }, `+${dW} pts pour ${shortDisplay(winner)} !`);
 }
 window.submitMatch = submitMatch;
 
@@ -1328,11 +1348,12 @@ window.setNewGender = setNewGender;
 function renderPlayerList() {
   const sec = document.getElementById('playerListSection');
   const search = document.getElementById('playerSearch')?.value||'';
-  const pArr = sortedPlayers().filter(p=>p.name.toLowerCase().includes(search.toLowerCase()));
+  const pArr = sortedPlayers().filter(p=>fullName(p).toLowerCase().includes(search.toLowerCase()));
 
   sec.innerHTML = `
     <div class="card">
-      <input type="text" id="newPlayerName" placeholder="Nom de l'étudiant" onkeydown="if(event.key==='Enter')addPlayer()"/>
+      <input type="text" id="newPlayerNom" placeholder="Nom" onkeydown="if(event.key==='Enter'){document.getElementById('newPlayerPrenom').focus()}"/>
+      <input type="text" id="newPlayerPrenom" placeholder="Prénom" onkeydown="if(event.key==='Enter')addPlayer()"/>
       <div class="gender-row">
         <button class="g-btn male" id="gBtnM" onclick="setNewGender('M')">♂ Homme</button>
         <button class="g-btn" id="gBtnF" onclick="setNewGender('F')">♀ Femme</button>
@@ -1346,7 +1367,8 @@ function renderPlayerList() {
       if(editingPlayerId===p.id) return `
         <div class="player-card">
           <div class="edit-form">
-            <input type="text" id="editName" value="${p.name}"/>
+            <input type="text" id="editNom" placeholder="Nom" value="${p.nom||''}"/>
+            <input type="text" id="editPrenom" placeholder="Prénom" value="${p.prenom||''}"/>
             <div class="gender-row">
               <button class="g-btn ${editPlayerGender==='M'?'male':''}" id="eBtnM" onclick="setEditGender('M')">♂</button>
               <button class="g-btn ${editPlayerGender==='F'?'female':''}" id="eBtnF" onclick="setEditGender('F')">♀</button>
@@ -1360,15 +1382,15 @@ function renderPlayerList() {
       return `
         <div class="player-card">
           <div class="avatar" style="background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-            ${nameInitial(p.name)}
+            ${avatarInitial(p)}
           </div>
           <div style="flex:1">
-            <div style="font-size:15px;font-weight:600">${displayName(p.name)}</div>
+            <div style="font-size:15px;font-weight:600">${fullName(p)}</div>
             <div style="font-size:11px;color:var(--muted)">${p.gender==='F'?'♀':'♂'} · ${p.played||0} matchs${grp?` · <span style="color:var(--accent)">${grp.name}</span>`:''}</div>
           </div>
           <div style="font-size:17px;font-weight:700;color:var(--accent);margin-right:4px">${p.elo}</div>
           <button class="btn-icon" onclick="startEdit('${p.id}','${p.gender}')">✏️</button>
-          <button class="btn-icon" onclick="confirmDeletePlayer('${p.id}','${p.name}')">🗑️</button>
+          <button class="btn-icon" onclick="confirmDeletePlayer('${p.id}')">🗑️</button>
         </div>`;
     }).join('')}`;
   sec.style.display='flex'; sec.style.flexDirection='column'; sec.style.gap='10px';
@@ -1412,9 +1434,9 @@ function renderPlayerGroups() {
             <input type="checkbox" ${inG?'checked':''} onchange="toggleGroupExclusive('${p.id}','${g.id}',this.checked)"
               style="accent-color:var(--accent);width:18px;height:18px;flex-shrink:0"/>
             <div class="avatar" style="width:30px;height:30px;font-size:12px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-              ${nameInitial(p.name)}
+              ${avatarInitial(p)}
             </div>
-            <span style="font-size:14px;font-weight:${inG?'600':'400'};color:${inG?'var(--text)':'var(--muted)'};flex:1">${displayName(p.name)}</span>
+            <span style="font-size:14px;font-weight:${inG?'600':'400'};color:${inG?'var(--text)':'var(--muted)'};flex:1">${fullName(p)}</span>
             <span style="font-size:12px;color:var(--accent)">${p.elo}</span>
           </label>`;
         }).join('')}
@@ -1424,13 +1446,14 @@ function renderPlayerGroups() {
 }
 
 function addPlayer() {
-  const name = document.getElementById('newPlayerName')?.value?.trim();
-  if(!name) return;
+  const nom = document.getElementById('newPlayerNom')?.value?.trim();
+  const prenom = document.getElementById('newPlayerPrenom')?.value?.trim();
+  if(!nom && !prenom) return;
   setSyncing(true);
   run(async () => {
-    const key = await fbPush('players', {name, gender:newPlayerGender, elo:1000, wins:0, losses:0, played:0});
+    const key = await fbPush('players', {nom:nom||'', prenom:prenom||'', gender:newPlayerGender, elo:1000, wins:0, losses:0, played:0});
     await fbUpdate(`players/${key}`, {id:key});
-  }, `${name} ajouté·e !`);
+  }, `${fullName({nom, prenom})} ajouté·e !`);
 }
 window.addPlayer = addPlayer;
 
@@ -1445,19 +1468,21 @@ function setEditGender(g) {
 }
 window.setEditGender = setEditGender;
 function saveEdit(id) {
-  const name=document.getElementById('editName')?.value?.trim();
-  if(!name)return;
+  const nom=document.getElementById('editNom')?.value?.trim();
+  const prenom=document.getElementById('editPrenom')?.value?.trim();
+  if(!nom && !prenom)return;
   setSyncing(true);
   run(async () => {
-    await fbUpdate(`players/${id}`, {name, gender:editPlayerGender});
+    await fbUpdate(`players/${id}`, {nom:nom||'', prenom:prenom||'', gender:editPlayerGender});
     editingPlayerId=null;
   }, 'Joueur mis à jour');
 }
 window.saveEdit = saveEdit;
 
-function confirmDeletePlayer(id, name) {
+function confirmDeletePlayer(id) {
+  const p = players[id];
   showModal(`<div style="font-size:32px;margin-bottom:8px">🗑️</div>
-    <div style="font-weight:700;margin-bottom:4px">Supprimer ${displayName(name)} ?</div>
+    <div style="font-weight:700;margin-bottom:4px">Supprimer ${fullName(p)} ?</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Cette action est irréversible.</div>
     <div style="display:flex;gap:8px">
       <button class="btn-primary" style="background:var(--red);flex:1" onclick="doConfirm()">Supprimer</button>
@@ -1556,10 +1581,10 @@ function renderRanking() {
       return `<div class="rank-card ${i<3?'top3':''}" style="animation-delay:${i*40}ms">
         <div style="width:32px;text-align:center;font-size:${i<3?'22':'13'}px;color:${i>=3?'var(--muted)':'inherit'}">${medals[i]||'#'+(i+1)}</div>
         <div class="avatar" style="width:42px;height:42px;font-size:18px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-          ${nameInitial(p.name)}
+          ${avatarInitial(p)}
         </div>
         <div style="flex:1">
-          <div style="font-weight:700;font-size:15px">${displayName(p.name)}</div>
+          <div style="font-weight:700;font-size:15px">${fullName(p)}</div>
           <div style="font-size:11px;color:var(--muted)">${p.wins||0}V – ${p.losses||0}D · ${wr}% win</div>
         </div>
         <div style="text-align:right">
@@ -1603,12 +1628,12 @@ function getClassementBaseUrl() {
 }
 
 function buildClassementPayload(list, groupName) {
-  return JSON.stringify({ g: groupName || null, t: new Date().toISOString(), p: list.map(p => [p.name, p.elo]) });
+  return JSON.stringify({ g: groupName || null, t: new Date().toISOString(), p: list.map(p => [fullName(p), p.elo]) });
 }
 
 function buildClassementText(list, groupName) {
   const title = groupName ? `Classement — ${groupName}` : 'Classement';
-  return title + '\n' + list.map((p,i) => `${i+1}. ${p.name} — ${p.elo} pts`).join('\n');
+  return title + '\n' + list.map((p,i) => `${i+1}. ${fullName(p)} — ${p.elo} pts`).join('\n');
 }
 
 function renderRankingQr(list, activeGrp) {
@@ -1682,8 +1707,8 @@ function exportCSV() {
   const pArr=sortedPlayers();
   const gArr=objArr(groups);
   const getGrp=p=>gArr.find(g=>(g.playerIds||[]).includes(p.id))?.name||'—';
-  const rows=[['Rang','Nom','Genre','Groupe','ELO','V','D','Matchs','Win%'],
-    ...pArr.map((p,i)=>[i+1,p.name,p.gender==='F'?'Femme':'Homme',getGrp(p),p.elo,p.wins||0,p.losses||0,p.played||0,p.played?Math.round(p.wins/p.played*100)+'%':'0%'])];
+  const rows=[['Rang','Nom','Prénom','Genre','Groupe','ELO','V','D','Matchs','Win%'],
+    ...pArr.map((p,i)=>[i+1,p.nom||'',p.prenom||'',p.gender==='F'?'Femme':'Homme',getGrp(p),p.elo,p.wins||0,p.losses||0,p.played||0,p.played?Math.round(p.wins/p.played*100)+'%':'0%'])];
   const blob=new Blob(['\uFEFF'+rows.map(r=>r.join(';')).join('\n')],{type:'text/csv;charset=utf-8;'});
   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:'classement.csv'});
   a.click();
@@ -1699,19 +1724,19 @@ function renderImport() {
     <div class="card">
       <span class="lbl">📥 Importer depuis un fichier CSV</span>
       <div style="font-size:12px;color:var(--muted);line-height:1.6">
-        Format attendu — 3 colonnes séparées par <strong style="color:var(--accent)">;</strong> :<br/>
-        <code style="background:#0a0f1e;padding:2px 6px;border-radius:4px;font-size:11px">Nom;Sexe;Groupe</code><br/>
-        Sexe : <strong>M</strong> ou <strong>F</strong> · Groupe : nom exact ou vide
+        Format attendu — 4 colonnes séparées par <strong style="color:var(--accent)">;</strong> :<br/>
+        <code style="background:#0a0f1e;padding:2px 6px;border-radius:4px;font-size:11px">Nom;Prénom;Sexe;Groupe</code><br/>
+        Sexe : <strong>M</strong> (ou H) / <strong>F</strong> · Groupe : nom exact ou vide
       </div>
       <input type="file" id="csvFileInput" accept=".csv,.txt" onchange="parseCsvFile(this)"
         style="background:#0a0f1e;border:1px solid var(--border);border-radius:10px;padding:10px;
                color:var(--text);font-size:13px;width:100%;font-family:-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif"/>
       <div style="font-size:11px;color:var(--muted);text-align:center">— ou collez directement —</div>
-      <textarea id="importTextarea" placeholder="Alice;F;Groupe A&#10;Bob;M;Groupe B&#10;Marie;F;&#10;Thomas;M;Groupe A"
+      <textarea id="importTextarea" placeholder="TRIBET;Hervé;M;Groupe A&#10;MARTIN;Léa;F;Groupe B&#10;DURAND;Marie;F;&#10;PETIT;Thomas;M;Groupe A"
         style="background:#0a0f1e;border:1px solid var(--border);border-radius:10px;padding:12px;
                color:var(--text);font-size:13px;width:100%;font-family:-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
                outline:none;resize:vertical;min-height:100px;line-height:1.6"
-        oninput="parseImport()">${importList.map(p=>`${p.name};${p.gender};${p.groupe||""}`).join("\n")}</textarea>
+        oninput="parseImport()">${importList.map(p=>`${p.nom||''};${p.prenom||''};${p.gender};${p.groupe||""}`).join("\n")}</textarea>
     </div>
     <div id="importPreview"></div>
     ${importList.length > 0 ? `
@@ -1735,20 +1760,23 @@ function parseCsvFile(input) {
 }
 window.parseCsvFile = parseCsvFile;
 
+// Format d'import : "Nom;Prénom;Sexe;Groupe" (4 colonnes).
 function parseImport() {
   const text = document.getElementById('importTextarea')?.value || '';
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const prevMap = {};
-  importList.forEach(p => prevMap[p.name] = p);
+  importList.forEach(p => prevMap[`${p.nom}|${p.prenom}`.toLowerCase()] = p);
   importList = lines.map(line => {
     const sep = line.includes(';') ? ';' : ',';
     const parts = line.split(sep).map(s => s.trim());
-    const name = parts[0] || '';
-    if (!name) return null;
-    const genderRaw = (parts[1] || '').toUpperCase();
-    const gender = genderRaw === 'F' ? 'F' : genderRaw === 'M' ? 'M' : (prevMap[name]?.gender || 'M');
-    const groupe = parts[2] || prevMap[name]?.groupe || '';
-    return { name, gender, groupe };
+    const nom = parts[0] || '';
+    const prenom = parts[1] || '';
+    if (!nom && !prenom) return null;
+    const key = `${nom}|${prenom}`.toLowerCase();
+    const genderRaw = (parts[2] || '').toUpperCase();
+    const gender = /^F/.test(genderRaw) ? 'F' : /^[MH]/.test(genderRaw) ? 'M' : (prevMap[key]?.gender || 'M');
+    const groupe = parts[3] || prevMap[key]?.groupe || '';
+    return { nom, prenom, gender, groupe };
   }).filter(Boolean);
   renderImportPreview();
   const btn = document.querySelector('#playerImportSection .btn-primary');
@@ -1786,10 +1814,10 @@ function renderImportPreview() {
       <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;
                   padding:9px 12px;display:flex;align-items:center;gap:10px">
         <div class="avatar" style="width:32px;height:32px;font-size:13px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-          ${nameInitial(p.name)}
+          ${avatarInitial(p)}
         </div>
         <div style="flex:1">
-          <div style="font-size:14px;font-weight:600">${displayName(p.name)}</div>
+          <div style="font-size:14px;font-weight:600">${fullName(p)}</div>
           ${p.groupe ? `<div style="font-size:11px;color:var(--accent)">${p.groupe}</div>` : '<div style="font-size:11px;color:var(--muted)">Sans groupe</div>'}
         </div>
         <button onclick="setImportGender(${i},'M')"
@@ -1807,8 +1835,8 @@ window.setAllGender = setAllGender;
 
 function confirmImport() {
   if (importList.length === 0) return;
-  const existingNames = objArr(players).map(p => p.name.toLowerCase());
-  const toAdd = importList.filter(p => !existingNames.includes(p.name.toLowerCase()));
+  const existingKeys = objArr(players).map(p => `${(p.nom||'').toLowerCase()}|${(p.prenom||'').toLowerCase()}`);
+  const toAdd = importList.filter(p => !existingKeys.includes(`${(p.nom||'').toLowerCase()}|${(p.prenom||'').toLowerCase()}`));
   const skipped = importList.length - toAdd.length;
   if (toAdd.length === 0) { showToast('Tous ces joueurs existent déjà !', 'err'); return; }
   const msg = skipped > 0
@@ -1828,7 +1856,7 @@ function confirmImport() {
     }
     const playersByGroup = {};
     for (const p of toAdd) {
-      const key = await fbPush('players', {name:p.name, gender:p.gender, elo:1000, wins:0, losses:0, played:0});
+      const key = await fbPush('players', {nom:p.nom||'', prenom:p.prenom||'', gender:p.gender, elo:1000, wins:0, losses:0, played:0});
       await fbUpdate(`players/${key}`, {id: key});
       if (p.groupe) {
         const gId = groupMap[p.groupe.toLowerCase()];
@@ -1869,7 +1897,7 @@ function renderHistory() {
   // Filtres
   let filtered = pArr;
   if (grpFilter !== 'all') filtered = filtered.filter(p => (groups[grpFilter]?.playerIds||[]).includes(p.id));
-  if (search) filtered = filtered.filter(p => p.name.toLowerCase().includes(search));
+  if (search) filtered = filtered.filter(p => fullName(p).toLowerCase().includes(search));
 
   const el = document.getElementById('historyList');
   el.style.display = 'flex'; el.style.flexDirection = 'column'; el.style.gap = '10px';
@@ -1886,10 +1914,10 @@ function renderHistory() {
       <div class="hist-card" style="cursor:pointer" onclick="showPlayerDetail('${p.id}')">
         <div style="display:flex;align-items:center;gap:10px">
           <div class="avatar" style="width:38px;height:38px;font-size:15px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-            ${escapeHtml(nameInitial(p.name))}
+            ${escapeHtml(avatarInitial(p))}
           </div>
           <div style="flex:1">
-            <div style="font-weight:700;font-size:15px">${escapeHtml(displayName(p.name))}</div>
+            <div style="font-weight:700;font-size:15px">${escapeHtml(fullName(p))}</div>
             <div style="font-size:11px;color:var(--muted)">${pMatches.length} match${pMatches.length>1?'s':''}${pMatches.length ? ' · ' + wr + '% victoires' : ''}</div>
           </div>
           <div style="text-align:right">
@@ -1911,11 +1939,11 @@ function computeHeadToHead(playerId, pMatches) {
     const oppId = isWinner ? m.loserId : m.winnerId;
     const opp = players[oppId];
     if (!opp) return;
-    if (!byOpp[oppId]) byOpp[oppId] = { id: oppId, name: opp.name, gender: opp.gender, wins: 0, losses: 0, netDelta: 0 };
+    if (!byOpp[oppId]) byOpp[oppId] = { id: oppId, nom: opp.nom, prenom: opp.prenom, gender: opp.gender, wins: 0, losses: 0, netDelta: 0 };
     if (isWinner) { byOpp[oppId].wins++; byOpp[oppId].netDelta += (m.winnerDelta || 0); }
     else { byOpp[oppId].losses++; byOpp[oppId].netDelta += (m.loserDelta || 0); }
   });
-  return Object.values(byOpp).sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses) || a.name.localeCompare(b.name));
+  return Object.values(byOpp).sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses) || fullName(a).localeCompare(fullName(b)));
 }
 
 function showPlayerDetail(playerId) {
@@ -1928,7 +1956,7 @@ function showPlayerDetail(playerId) {
   if (pMatches.length === 0) {
     showModal(`
       <div style="font-size:32px;margin-bottom:8px">${p.gender === 'F' ? '♀' : '♂'}</div>
-      <div style="font-weight:800;font-size:17px;margin-bottom:4px">${escapeHtml(displayName(p.name))}</div>
+      <div style="font-weight:800;font-size:17px;margin-bottom:4px">${escapeHtml(fullName(p))}</div>
       <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Aucun match joué pour l'instant</div>
       <button class="btn-secondary" style="width:100%" onclick="closeModal()">Fermer</button>`, null);
     return;
@@ -1951,10 +1979,10 @@ function showPlayerDetail(playerId) {
     const total = o.wins + o.losses;
     const oppWr = total ? Math.round(o.wins / total * 100) : 0;
     return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
-      <div class="avatar" style="width:30px;height:30px;font-size:12px;background:${o.gender === 'F' ? 'var(--female)' : 'var(--male)'}">${escapeHtml(nameInitial(o.name))}</div>
+      <div class="avatar" style="width:30px;height:30px;font-size:12px;background:${o.gender === 'F' ? 'var(--female)' : 'var(--male)'}">${escapeHtml(avatarInitial(o))}</div>
       <div style="flex:1">
-        <div style="font-size:13px;font-weight:600">${escapeHtml(displayName(o.name))}</div>
-        <div style="font-size:10px;color:var(--muted)">${total} match${total > 1 ? 's' : ''} · ${oppWr}% de victoires face à ${escapeHtml(displayName(o.name))}</div>
+        <div style="font-size:13px;font-weight:600">${escapeHtml(fullName(o))}</div>
+        <div style="font-size:10px;color:var(--muted)">${total} match${total > 1 ? 's' : ''} · ${oppWr}% de victoires face à ${escapeHtml(fullName(o))}</div>
       </div>
       <div style="text-align:right">
         <div style="font-size:13px;font-weight:800"><span style="color:var(--green)">${o.wins}V</span> – <span style="color:var(--red)">${o.losses}D</span></div>
@@ -1965,9 +1993,9 @@ function showPlayerDetail(playerId) {
 
   showModal(`
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;text-align:left">
-      <div class="avatar" style="width:44px;height:44px;font-size:18px;background:${p.gender === 'F' ? 'var(--female)' : 'var(--male)'}">${escapeHtml(nameInitial(p.name))}</div>
+      <div class="avatar" style="width:44px;height:44px;font-size:18px;background:${p.gender === 'F' ? 'var(--female)' : 'var(--male)'}">${escapeHtml(avatarInitial(p))}</div>
       <div style="flex:1">
-        <div style="font-weight:800;font-size:17px">${escapeHtml(displayName(p.name))}</div>
+        <div style="font-weight:800;font-size:17px">${escapeHtml(fullName(p))}</div>
         <div style="font-size:12px;color:var(--muted)">${p.elo} pts · ${pMatches.length} match${pMatches.length > 1 ? 's' : ''} · ${wr}% victoires</div>
       </div>
       <div style="text-align:right">
@@ -2041,8 +2069,8 @@ function exportDayMatches(day) {
     date: day,
     matchs: dayData.matches.map(m => ({
       heure: new Date(m.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-      vainqueur: players[m.winnerId]?.name || '?',
-      perdant: players[m.loserId]?.name || '?',
+      vainqueur: fullName(players[m.winnerId]) || '?',
+      perdant: fullName(players[m.loserId]) || '?',
       score: (m.sets || []).map(s => `${s.s1}-${s.s2}`).join(' '),
       setsVainqueur: m.winnerSets, setsPerdant: m.loserSets,
       deltaVainqueur: m.winnerDelta, deltaPerdant: m.loserDelta
