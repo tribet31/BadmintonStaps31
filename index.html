@@ -619,6 +619,42 @@ async function saveAll() {
 // Génère un ID unique simple
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 
+// ── Formatage des noms ───────────────────────────────────────────────────────
+// Convention de saisie : "NOM Prénom", le nom de famille en MAJUSCULES (ex : "TRIBET Hervé").
+// On repère le(s) mot(s) en majuscules pour isoler le nom de famille, quel que soit l'ordre
+// exact tapé — si aucun mot en majuscules n'est trouvé, on suppose par défaut que le premier
+// mot est le nom de famille (repli cohérent avec la convention de saisie).
+function splitName(fullName) {
+  const raw = String(fullName || '').trim();
+  if (!raw) return { prenom: '', nom: '' };
+  const words = raw.split(/\s+/);
+  if (words.length === 1) return { prenom: '', nom: words[0] };
+  const isAllCaps = w => w.toUpperCase() === w && w.toLowerCase() !== w;
+  let i = 0;
+  let nomWords = [];
+  while (i < words.length && isAllCaps(words[i])) { nomWords.push(words[i]); i++; }
+  if (nomWords.length === 0) { nomWords = [words[0]]; i = 1; }
+  if (i >= words.length) return { prenom: '', nom: words.join(' ') };
+  return { prenom: words.slice(i).join(' '), nom: nomWords.join(' ') };
+}
+// Affichage complet, ordre "Prénom Nom" — utilisé dans les onglets/listes de l'app.
+function displayName(fullName) {
+  const { prenom, nom } = splitName(fullName);
+  return prenom ? `${prenom} ${nom}` : nom;
+}
+// Affichage court "Prénom N." — utilisé sur les boutons de saisie des matchs.
+function shortName(fullName) {
+  const { prenom, nom } = splitName(fullName);
+  if (!prenom || !nom) return String(fullName || '');
+  return `${prenom} ${nom.trim()[0].toUpperCase()}.`;
+}
+// Initiale utilisée dans les avatars ronds — celle du prénom (cohérent avec l'affichage "Prénom …").
+function nameInitial(fullName) {
+  const { prenom, nom } = splitName(fullName);
+  const src = prenom || nom;
+  return src ? src.trim()[0].toUpperCase() : '?';
+}
+
 // Helpers CRUD locaux + sync
 async function fbGet(path) {
   const keys = path.split('/').filter(Boolean);
@@ -746,10 +782,10 @@ function confirmEndSession() {
   const rows = recap.map(r => `
     <div class="session-player-row">
       <div class="avatar" style="width:36px;height:36px;font-size:14px;background:${r.gender==='F'?'var(--female)':'var(--male)'}">
-        ${r.name[0].toUpperCase()}
+        ${nameInitial(r.name)}
       </div>
       <div style="flex:1">
-        <div style="font-size:14px;font-weight:700">${r.name}</div>
+        <div style="font-size:14px;font-weight:700">${displayName(r.name)}</div>
         <div style="font-size:11px;color:var(--muted)">${r.matchCount} match${r.matchCount>1?'s':''} · coeff. ${r.coeff.toFixed(2)}</div>
       </div>
       <div style="text-align:right">
@@ -1063,9 +1099,9 @@ function renderPlayerGrid(pArr) {
         const avatarBg = p.gender==='F' ? 'var(--female)' : 'var(--male)';
         return `<button class="player-grid-btn disabled" style="opacity:.4;cursor:not-allowed">
           <div class="avatar" style="width:28px;height:28px;font-size:13px;background:${avatarBg}">
-            ${p.name[0].toUpperCase()}
+            ${nameInitial(p.name)}
           </div>
-          <span class="pgname">${p.name}</span>
+          <span class="pgname">${shortName(p.name)}</span>
           <span class="pgelo">${p.elo} pts</span>
         </button>`;
       }).join('')}`;
@@ -1090,9 +1126,9 @@ function renderPlayerGrid(pArr) {
       <button class="${cls}" onclick="selectPlayer('${p.id}')">
         <div class="avatar" style="width:28px;height:28px;font-size:13px;background:${avatarBg};position:relative">
           ${badge ? `<span style="position:absolute;top:-4px;right:-4px;background:${p.id===matchP1Id?'var(--green)':'var(--accent)'};color:#000;border-radius:50%;width:14px;height:14px;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center">${badge}</span>` : ''}
-          ${p.name[0].toUpperCase()}
+          ${nameInitial(p.name)}
         </div>
-        <span class="pgname">${p.name}</span>
+        <span class="pgname">${shortName(p.name)}</span>
         <span class="pgelo">${p.elo} pts</span>
       </button>`;
   }).join('');
@@ -1143,8 +1179,8 @@ function updateBanner() {
   const e1 = document.getElementById('bannerP1Elo');
   if (pl1) {
     a1.style.background = pl1.gender==='F' ? 'var(--female)' : 'var(--male)';
-    a1.textContent = pl1.name[0].toUpperCase();
-    n1.style.color = 'var(--green)'; n1.textContent = pl1.name;
+    a1.textContent = nameInitial(pl1.name);
+    n1.style.color = 'var(--green)'; n1.textContent = shortName(pl1.name);
     e1.textContent = pl1.elo + ' pts';
   } else {
     a1.style.background = 'var(--muted)'; a1.textContent = '?';
@@ -1158,8 +1194,8 @@ function updateBanner() {
   const e2 = document.getElementById('bannerP2Elo');
   if (pl2) {
     a2.style.background = pl2.gender==='F' ? 'var(--female)' : 'var(--male)';
-    a2.textContent = pl2.name[0].toUpperCase();
-    n2.style.color = 'var(--accent)'; n2.textContent = pl2.name;
+    a2.textContent = nameInitial(pl2.name);
+    n2.style.color = 'var(--accent)'; n2.textContent = shortName(pl2.name);
     e2.textContent = pl2.elo + ' pts';
   } else {
     a2.style.background = 'var(--muted)'; a2.textContent = '?';
@@ -1225,7 +1261,7 @@ function updateMatchPreview() {
   const prev = document.getElementById('scorePreview');
   if(w1>0||w2>0){
     prev.style.display='flex';
-    const winnerName = w1>w2?(pl1?.name||'J1'):w2>w1?(pl2?.name||'J2'):'';
+    const winnerName = w1>w2?(pl1?.name?shortName(pl1.name):'J1'):w2>w1?(pl2?.name?shortName(pl2.name):'J2'):'';
     prev.innerHTML=`
       <span class="${w1>w2?'score-w':'score-l'}">${w1}</span>
       <span style="color:var(--muted);font-size:18px;margin:0 6px">–</span>
@@ -1257,7 +1293,7 @@ function submitMatch() {
     const btn=document.getElementById('submitMatchBtn');
     btn.textContent='✓ Match enregistré !'; btn.style.background='var(--green)';
     setTimeout(()=>{btn.textContent='Valider le match';btn.style.background='';},2500);
-  }, `+${dW} pts pour ${winner.name} !`);
+  }, `+${dW} pts pour ${shortName(winner.name)} !`);
 }
 window.submitMatch = submitMatch;
 
@@ -1324,10 +1360,10 @@ function renderPlayerList() {
       return `
         <div class="player-card">
           <div class="avatar" style="background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-            ${p.name[0].toUpperCase()}
+            ${nameInitial(p.name)}
           </div>
           <div style="flex:1">
-            <div style="font-size:15px;font-weight:600">${p.name}</div>
+            <div style="font-size:15px;font-weight:600">${displayName(p.name)}</div>
             <div style="font-size:11px;color:var(--muted)">${p.gender==='F'?'♀':'♂'} · ${p.played||0} matchs${grp?` · <span style="color:var(--accent)">${grp.name}</span>`:''}</div>
           </div>
           <div style="font-size:17px;font-weight:700;color:var(--accent);margin-right:4px">${p.elo}</div>
@@ -1376,9 +1412,9 @@ function renderPlayerGroups() {
             <input type="checkbox" ${inG?'checked':''} onchange="toggleGroupExclusive('${p.id}','${g.id}',this.checked)"
               style="accent-color:var(--accent);width:18px;height:18px;flex-shrink:0"/>
             <div class="avatar" style="width:30px;height:30px;font-size:12px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-              ${p.name[0].toUpperCase()}
+              ${nameInitial(p.name)}
             </div>
-            <span style="font-size:14px;font-weight:${inG?'600':'400'};color:${inG?'var(--text)':'var(--muted)'};flex:1">${p.name}</span>
+            <span style="font-size:14px;font-weight:${inG?'600':'400'};color:${inG?'var(--text)':'var(--muted)'};flex:1">${displayName(p.name)}</span>
             <span style="font-size:12px;color:var(--accent)">${p.elo}</span>
           </label>`;
         }).join('')}
@@ -1421,7 +1457,7 @@ window.saveEdit = saveEdit;
 
 function confirmDeletePlayer(id, name) {
   showModal(`<div style="font-size:32px;margin-bottom:8px">🗑️</div>
-    <div style="font-weight:700;margin-bottom:4px">Supprimer ${name} ?</div>
+    <div style="font-weight:700;margin-bottom:4px">Supprimer ${displayName(name)} ?</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Cette action est irréversible.</div>
     <div style="display:flex;gap:8px">
       <button class="btn-primary" style="background:var(--red);flex:1" onclick="doConfirm()">Supprimer</button>
@@ -1520,10 +1556,10 @@ function renderRanking() {
       return `<div class="rank-card ${i<3?'top3':''}" style="animation-delay:${i*40}ms">
         <div style="width:32px;text-align:center;font-size:${i<3?'22':'13'}px;color:${i>=3?'var(--muted)':'inherit'}">${medals[i]||'#'+(i+1)}</div>
         <div class="avatar" style="width:42px;height:42px;font-size:18px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-          ${p.name[0].toUpperCase()}
+          ${nameInitial(p.name)}
         </div>
         <div style="flex:1">
-          <div style="font-weight:700;font-size:15px">${p.name}</div>
+          <div style="font-weight:700;font-size:15px">${displayName(p.name)}</div>
           <div style="font-size:11px;color:var(--muted)">${p.wins||0}V – ${p.losses||0}D · ${wr}% win</div>
         </div>
         <div style="text-align:right">
@@ -1750,10 +1786,10 @@ function renderImportPreview() {
       <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;
                   padding:9px 12px;display:flex;align-items:center;gap:10px">
         <div class="avatar" style="width:32px;height:32px;font-size:13px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-          ${p.name[0].toUpperCase()}
+          ${nameInitial(p.name)}
         </div>
         <div style="flex:1">
-          <div style="font-size:14px;font-weight:600">${p.name}</div>
+          <div style="font-size:14px;font-weight:600">${displayName(p.name)}</div>
           ${p.groupe ? `<div style="font-size:11px;color:var(--accent)">${p.groupe}</div>` : '<div style="font-size:11px;color:var(--muted)">Sans groupe</div>'}
         </div>
         <button onclick="setImportGender(${i},'M')"
@@ -1850,10 +1886,10 @@ function renderHistory() {
       <div class="hist-card" style="cursor:pointer" onclick="showPlayerDetail('${p.id}')">
         <div style="display:flex;align-items:center;gap:10px">
           <div class="avatar" style="width:38px;height:38px;font-size:15px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-            ${escapeHtml(p.name[0].toUpperCase())}
+            ${escapeHtml(nameInitial(p.name))}
           </div>
           <div style="flex:1">
-            <div style="font-weight:700;font-size:15px">${escapeHtml(p.name)}</div>
+            <div style="font-weight:700;font-size:15px">${escapeHtml(displayName(p.name))}</div>
             <div style="font-size:11px;color:var(--muted)">${pMatches.length} match${pMatches.length>1?'s':''}${pMatches.length ? ' · ' + wr + '% victoires' : ''}</div>
           </div>
           <div style="text-align:right">
@@ -1892,7 +1928,7 @@ function showPlayerDetail(playerId) {
   if (pMatches.length === 0) {
     showModal(`
       <div style="font-size:32px;margin-bottom:8px">${p.gender === 'F' ? '♀' : '♂'}</div>
-      <div style="font-weight:800;font-size:17px;margin-bottom:4px">${escapeHtml(p.name)}</div>
+      <div style="font-weight:800;font-size:17px;margin-bottom:4px">${escapeHtml(displayName(p.name))}</div>
       <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Aucun match joué pour l'instant</div>
       <button class="btn-secondary" style="width:100%" onclick="closeModal()">Fermer</button>`, null);
     return;
@@ -1915,10 +1951,10 @@ function showPlayerDetail(playerId) {
     const total = o.wins + o.losses;
     const oppWr = total ? Math.round(o.wins / total * 100) : 0;
     return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
-      <div class="avatar" style="width:30px;height:30px;font-size:12px;background:${o.gender === 'F' ? 'var(--female)' : 'var(--male)'}">${escapeHtml(o.name[0].toUpperCase())}</div>
+      <div class="avatar" style="width:30px;height:30px;font-size:12px;background:${o.gender === 'F' ? 'var(--female)' : 'var(--male)'}">${escapeHtml(nameInitial(o.name))}</div>
       <div style="flex:1">
-        <div style="font-size:13px;font-weight:600">${escapeHtml(o.name)}</div>
-        <div style="font-size:10px;color:var(--muted)">${total} match${total > 1 ? 's' : ''} · ${oppWr}% de victoires face à ${escapeHtml(o.name)}</div>
+        <div style="font-size:13px;font-weight:600">${escapeHtml(displayName(o.name))}</div>
+        <div style="font-size:10px;color:var(--muted)">${total} match${total > 1 ? 's' : ''} · ${oppWr}% de victoires face à ${escapeHtml(displayName(o.name))}</div>
       </div>
       <div style="text-align:right">
         <div style="font-size:13px;font-weight:800"><span style="color:var(--green)">${o.wins}V</span> – <span style="color:var(--red)">${o.losses}D</span></div>
@@ -1929,9 +1965,9 @@ function showPlayerDetail(playerId) {
 
   showModal(`
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;text-align:left">
-      <div class="avatar" style="width:44px;height:44px;font-size:18px;background:${p.gender === 'F' ? 'var(--female)' : 'var(--male)'}">${escapeHtml(p.name[0].toUpperCase())}</div>
+      <div class="avatar" style="width:44px;height:44px;font-size:18px;background:${p.gender === 'F' ? 'var(--female)' : 'var(--male)'}">${escapeHtml(nameInitial(p.name))}</div>
       <div style="flex:1">
-        <div style="font-weight:800;font-size:17px">${escapeHtml(p.name)}</div>
+        <div style="font-weight:800;font-size:17px">${escapeHtml(displayName(p.name))}</div>
         <div style="font-size:12px;color:var(--muted)">${p.elo} pts · ${pMatches.length} match${pMatches.length > 1 ? 's' : ''} · ${wr}% victoires</div>
       </div>
       <div style="text-align:right">
