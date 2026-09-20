@@ -528,10 +528,10 @@ window.__onBmReadResult = function (content) {
   window.__bmReadResolve && window.__bmReadResolve(content);
 };
 
-let _data = { players:{}, matches:{}, groups:{} };
+let _data = { players:{}, matches:{}, groups:{}, sessions:{} };
 
 // ── STATE ────────────────────────────────────────────────────────────────────
-let players = {}, matches = {}, groups = {};
+let players = {}, matches = {}, groups = {}, sessionsHistory = {};
 let currentTab = 'Match';
 let playerSubTab = 'list';
 let rankingGroupFilter = 'all';
@@ -546,6 +546,31 @@ let importList = [];
 let activeGroupId = null; // Toujours null au lancement
 let cachedGroupPlayers = null; // Cache de la liste filtrée du groupe actif
 
+// Répare les points ELO corrompus par un bug (désormais corrigé) qui pouvait, en clôturant une
+// séance, remplacer le score d'un joueur par une valeur invalide au lieu d'un nombre — ce qui
+// s'affichait ensuite comme "[object Object]" dans le classement. Reconstruit le score à partir
+// de l'historique réel des matchs (toujours correctement enregistré), en partant de 1000 points,
+// uniquement pour les joueurs dont la valeur actuelle est invalide — les autres ne sont pas touchés.
+// Limite connue : un bonus/malus de fin de séance appliqué à un joueur touché AVANT ce correctif
+// ne peut pas être retrouvé (il n'était lui-même pas conservé de façon fiable) ; si besoin, ce
+// point peut être réajusté manuellement via "Modifier" sur la fiche du joueur.
+function repairCorruptedElo() {
+  const brokenIds = Object.keys(players).filter(id => {
+    const e = players[id].elo;
+    return typeof e !== 'number' || !isFinite(e);
+  });
+  if (brokenIds.length === 0) return false;
+  const rebuilt = {};
+  brokenIds.forEach(id => { rebuilt[id] = 1000; });
+  const sortedMatches = objArr(matches).sort((a,b) => new Date(a.date) - new Date(b.date));
+  sortedMatches.forEach(m => {
+    if (Object.prototype.hasOwnProperty.call(rebuilt, m.winnerId)) rebuilt[m.winnerId] += (m.winnerDelta || 0);
+    if (Object.prototype.hasOwnProperty.call(rebuilt, m.loserId))  rebuilt[m.loserId]  += (m.loserDelta  || 0);
+  });
+  brokenIds.forEach(id => { players[id].elo = Math.max(100, Math.round(rebuilt[id])); });
+  return true;
+}
+
 async function loadAll() {
   document.getElementById('loadingStatus').textContent = 'Chargement…';
   try {
@@ -557,10 +582,12 @@ async function loadAll() {
     if (text === null || typeof text === 'undefined') {
       text = localStorage.getItem(LOCAL_STORAGE_KEY);
     }
-    _data = text ? JSON.parse(text) : { players:{}, matches:{}, groups:{} };
+    _data = text ? JSON.parse(text) : { players:{}, matches:{}, groups:{}, sessions:{} };
     players = _data.players || {};
     matches = _data.matches || {};
     groups  = _data.groups  || {};
+    sessionsHistory = _data.sessions || {};
+    if (repairCorruptedElo()) await saveAll();
     document.getElementById('loadingScreen').style.display = 'none';
     return true;
   } catch(e) {
@@ -578,7 +605,7 @@ async function loadAll() {
 }
 
 async function saveAll() {
-  _data = { players, matches, groups };
+  _data = { players, matches, groups, sessions: sessionsHistory };
   const text = JSON.stringify(_data, null, 2);
   // Copie locale rapide — fonctionne même sans coquille native (pur PWA/Safari).
   try { localStorage.setItem(LOCAL_STORAGE_KEY, text); }
@@ -646,6 +673,7 @@ async function run(fn, msg) {
     players = _data.players || {};
     matches = _data.matches || {};
     groups  = _data.groups  || {};
+    sessionsHistory = _data.sessions || {};
     // 3. Rafraîchir l'UI immédiatement sans attendre la sauvegarde
     if (currentTab === 'Match')   renderMatchTab();
     if (currentTab === 'Players') renderPlayers();
@@ -886,11 +914,14 @@ async function saveAllData(data) {
   _data = {
     players: data.players || {},
     matches: data.matches || {},
-    groups:  data.groups  || {}
+    groups:  data.groups  || {},
+    sessions: data.sessions || {}
   };
   players = _data.players;
   matches = _data.matches;
   groups  = _data.groups;
+  sessionsHistory = _data.sessions;
+  if (repairCorruptedElo()) showToast('Certains points ont été recalculés (données restaurées)', 'err');
   await saveAll();
 }
 
@@ -899,18 +930,17 @@ function applyEndSession() {
   const recap = computeSessionRecap();
   if (recap.length === 0) return;
   setSyncing(true);
-  const updates = {};
+  const eloUpdates = {};
   recap.forEach(r => {
     if (r.eloAdjust !== 0) {
       const newElo = Math.max(100, (players[r.id]?.elo || 1000) + r.eloAdjust);
-      updates[`players/${r.id}/elo`] = newElo;
+      eloUpdates[r.id] = newElo;
     }
   });
   // Enregistrer la séance
   run(async () => {
-    for (const [path, val] of Object.entries(updates)) {
-      if (val === null) await fbDelete(path);
-      else await fbUpdate(path, typeof val === 'object' ? val : {});
+    for (const [id, newElo] of Object.entries(eloUpdates)) {
+      await fbUpdate(`players/${id}`, {elo: newElo});
     }
     await fbPush('sessions', {
       date: new Date().toISOString(),
@@ -1213,13 +1243,6 @@ function submitMatch() {
   const winner=players[winnerId], loser=players[loserId];
   const {nW,nL,dW,dL} = computeElo(winner, loser, Math.min(w1,w2));
   setSyncing(true);
-  const updates = {};
-  updates[`players/${winnerId}/elo`] = nW;
-  updates[`players/${winnerId}/wins`] = (winner.wins||0)+1;
-  updates[`players/${winnerId}/played`] = (winner.played||0)+1;
-  updates[`players/${loserId}/elo`] = nL;
-  updates[`players/${loserId}/losses`] = (loser.losses||0)+1;
-  updates[`players/${loserId}/played`] = (loser.played||0)+1;
   run(async () => {
     await fbUpdate(`players/${winnerId}`, {elo:nW, wins:(winner.wins||0)+1, played:(winner.played||0)+1});
     await fbUpdate(`players/${loserId}`, {elo:nL, losses:(loser.losses||0)+1, played:(loser.played||0)+1});
@@ -1405,12 +1428,6 @@ function confirmDeletePlayer(id, name) {
       <button class="btn-secondary" style="flex:1" onclick="closeModal()">Annuler</button>
     </div>`, ()=>{
     setSyncing(true);
-    const updates={};
-    updates[`players/${id}`]=null;
-    objArr(groups).forEach(g=>{
-      if((g.playerIds||[]).includes(id))
-        updates[`groups/${g.id}/playerIds`]=(g.playerIds||[]).filter(x=>x!==id);
-    });
     run(async () => {
       await fbDelete(`players/${id}`);
       for (const g of objArr(groups)) {
