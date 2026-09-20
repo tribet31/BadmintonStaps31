@@ -444,6 +444,11 @@
         <option value="all">Tous</option>
       </select>
     </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-export" onclick="toggleDaysSection()">📅 Journées de matchs</button>
+      <button class="btn-export" style="border-color:rgba(59,130,246,0.4);color:var(--male);background:rgba(59,130,246,0.08)" onclick="importDayFile()">📥 Importer une journée</button>
+    </div>
+    <div id="daysSection" style="display:none"></div>
     <input type="text" id="histSearch" placeholder="🔍 Rechercher un joueur…" oninput="renderHistory()"/>
     <div id="historyList"></div>
   </div>
@@ -1515,38 +1520,37 @@ function renderRanking() {
 }
 
 // ── QR CODE 100% LOCAL ──────────────────────────────────────────────────────
-// Le classement est encodé directement DANS le QR (mini-page HTML autonome en
-// data URI) : aucun serveur, aucun lien externe. En le scannant, l'appareil
-// photo de l'étudiant ouvre une page qui affiche le classement, hors connexion.
-// Un QR ne pouvant contenir qu'une quantité limitée de données (~2,9 Ko max),
-// on essaie d'abord la page complète, puis une version allégée, puis en
-// dernier recours un simple texte — toujours généré et affiché localement.
+// Le classement n'est stocké NULLE PART côté serveur : les données sont
+// encodées directement dans le lien (paramètre ?d=...), et classement.html
+// (page statique, à héberger juste à côté de index.html) se contente de les
+// lire depuis l'URL et de les afficher — aucune base de données, aucun appel
+// réseau pour le contenu. Le lien doit être un vrai http(s):// pour que l'app
+// Appareil photo (et les scanners QR en général) proposent de l'ouvrir : un
+// data:URI n'est pas reconnu comme un lien cliquable par ces apps, et Safari
+// bloque de toute façon la navigation vers des data:URI externes (anti-phishing).
+// Si la page tourne en local (coquille native, fichier local), aucune URL
+// hébergée n'existe : on bascule alors directement sur le QR en texte brut.
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function buildClassementHtml(list, groupName, compact) {
-  const title = groupName ? `Classement — ${groupName}` : 'Classement';
-  const rows = list.map((p,i) => `<tr><td>${i+1}</td><td>${escapeHtml(p.name)}</td><td>${p.elo}</td></tr>`).join('');
-  if (compact) {
-    return `<!doctype html><meta charset="utf-8"><title>${escapeHtml(title)}</title>`
-      + `<body style="font-family:sans-serif;background:#0a0f1e;color:#f1f5f9;padding:10px">`
-      + `<h3 style="color:#f59e0b">🏸 ${escapeHtml(title)}</h3>`
-      + `<table style="width:100%;border-collapse:collapse;font-size:13px">${rows}</table>`;
-  }
-  return `<!doctype html><meta charset="utf-8"><title>${escapeHtml(title)}</title>
-<style>
-body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0a0f1e;color:#f1f5f9;padding:20px;margin:0}
-h2{color:#f59e0b;margin:0 0 4px;font-size:20px}
-p.sub{color:#64748b;font-size:12px;margin:0 0 16px}
-table{width:100%;border-collapse:collapse}
-td,th{padding:7px 6px;text-align:left;border-bottom:1px solid #1f2d40;font-size:14px}
-th{color:#64748b;font-size:10px;text-transform:uppercase}
-td:last-child,th:last-child{text-align:right;font-weight:700;color:#f59e0b}
-</style>
-<h2>🏸 ${escapeHtml(title)}</h2>
-<p class="sub">Généré le ${new Date().toLocaleDateString('fr-FR')} — hors connexion</p>
-<table><tr><th>#</th><th>Nom</th><th>Pts</th></tr>${rows}</table>`;
+function strToB64url(s) {
+  const b64 = btoa(unescape(encodeURIComponent(s)));
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// URL de classement.html : toujours déduite de l'emplacement de cette page
+// (même dossier), jamais codée en dur — fonctionne quel que soit le dépôt/nom
+// d'hébergement. Renvoie null si la page ne tourne pas via http(s):// (donc
+// pas d'URL partageable : coquille native, fichier local...).
+function getClassementBaseUrl() {
+  if (!/^https?:$/.test(location.protocol)) return null;
+  try { return new URL('classement.html', location.href).href; }
+  catch (e) { return null; }
+}
+
+function buildClassementPayload(list, groupName) {
+  return JSON.stringify({ g: groupName || null, t: new Date().toISOString(), p: list.map(p => [p.name, p.elo]) });
 }
 
 function buildClassementText(list, groupName) {
@@ -1562,30 +1566,39 @@ function renderRankingQr(list, activeGrp) {
     return;
   }
   const groupName = activeGrp ? activeGrp.name : null;
-  let svg = null, degraded = false;
-  for (const compact of [false, true]) {
-    try {
-      const html = buildClassementHtml(list, groupName, compact);
-      const dataUri = 'data:text/html;charset=utf-8;base64,' + btoa(unescape(encodeURIComponent(html)));
-      svg = window.QR.toSVG(dataUri, { errorCorrectionLevel:'M', darkHex:'#0a0f1e', lightHex:'#ffffff', margin:2, width:196 });
-      degraded = compact;
-      break;
-    } catch (e) { /* trop volumineux pour un QR : on tente une version plus légère */ }
+  const baseUrl = getClassementBaseUrl();
+
+  let svg = null, mode = 'url', n = list.length;
+  // On tente d'abord la liste complète, puis on réduit progressivement si le
+  // lien dépasse la capacité d'un QR code (~2,9 Ko) pour les groupes nombreux.
+  if (baseUrl) {
+    while (n > 0) {
+      try {
+        const url = baseUrl + '?d=' + strToB64url(buildClassementPayload(list.slice(0, n), groupName));
+        svg = window.QR.toSVG(url, { errorCorrectionLevel:'M', darkHex:'#0a0f1e', lightHex:'#ffffff', margin:2, width:196 });
+        break;
+      } catch (e) { n = Math.floor(n * 0.8); } // trop long : on retente avec moins de joueurs
+    }
   }
+  const truncated = mode === 'url' && svg && n < list.length;
+
   if (!svg) {
-    // Dernier recours : texte brut, toujours lisible hors connexion par n'importe quel scanner.
+    // Pas d'URL hébergée disponible (app locale/native) ou classement trop
+    // long même réduit : dernier recours, texte brut lisible par tout scanner.
+    mode = 'text';
     try {
       svg = window.QR.toSVG(buildClassementText(list, groupName), { errorCorrectionLevel:'M', darkHex:'#0a0f1e', lightHex:'#ffffff', margin:2, width:196 });
-      degraded = 'text';
     } catch (e) {
       box.innerHTML = `<div class="empty">Classement trop long pour un QR code (${list.length} joueurs) — filtrez par groupe pour réduire.</div>`;
       return;
     }
   }
+
   const plainText = buildClassementText(list, groupName);
-  const note = degraded === 'text'
-    ? 'Format texte simplifié (classement trop long pour la page complète)'
-    : degraded ? 'Page allégée (classement long)' : 'Ouvre le classement, hors connexion';
+  const note = mode === 'text'
+    ? (baseUrl ? 'Format texte simplifié (classement trop long)' : 'Format texte (page classement.html non hébergée)')
+    : truncated ? `Lien vers le classement (${n}/${list.length} premiers — trop de joueurs pour tout inclure)`
+    : 'Ouvre le classement dans le navigateur';
   box.innerHTML = `
     <div style="font-weight:700;font-size:15px">📱 ${escapeHtml(groupName || 'Classement')}</div>
     <div style="font-size:12px;color:var(--muted);text-align:center">Scannez avec l'appareil photo — ${note}</div>
@@ -1810,105 +1823,232 @@ function renderHistory() {
 
   if (filtered.length === 0) { el.innerHTML = '<div class="empty">Aucun joueur</div>'; return; }
 
+  // Rapport simple : une ligne V/D par joueur. Le détail (face à chaque
+  // adversaire) s'ouvre en tapant sur le joueur — voir showPlayerDetail().
   el.innerHTML = filtered.map(p => {
-    // Matchs du joueur
     const pMatches = mArr.filter(m => m.winnerId === p.id || m.loserId === p.id);
-    if (pMatches.length === 0) return `
-      <div class="hist-card">
+    const wins = p.wins || 0, losses = p.losses || 0;
+    const wr = pMatches.length ? Math.round(wins / pMatches.length * 100) : 0;
+    return `
+      <div class="hist-card" style="cursor:pointer" onclick="showPlayerDetail('${p.id}')">
         <div style="display:flex;align-items:center;gap:10px">
           <div class="avatar" style="width:38px;height:38px;font-size:15px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-            ${p.name[0].toUpperCase()}
-          </div>
-          <div style="flex:1;font-weight:700">${p.name}</div>
-          <div style="font-size:11px;color:var(--muted)">Aucun match</div>
-        </div>
-      </div>`;
-
-    // Adversaires battus et perdus
-    const beaten = [], lost = [];
-    let totalEloDiff = 0;
-    let vsStronger = 0, vsWeaker = 0, vsGenderBonus = 0;
-
-    pMatches.forEach(m => {
-      const isWinner = m.winnerId === p.id;
-      const oppId = isWinner ? m.loserId : m.winnerId;
-      const opp = players[oppId];
-      if (!opp) return;
-      const eloDiff = opp.elo - p.elo; // positif = adversaire plus fort
-      totalEloDiff += eloDiff;
-      if (eloDiff > 0) vsStronger++;
-      else vsWeaker++;
-      // bonus genre : fille vs garçon
-      if (p.gender === 'F' && opp.gender === 'M') vsGenderBonus++;
-      if (isWinner) beaten.push({name: opp.name, elo: opp.elo, eloDiff});
-      else lost.push({name: opp.name, elo: opp.elo, eloDiff});
-    });
-
-    // Indice de risque : écart ELO moyen des adversaires
-    const avgEloDiff = Math.round(totalEloDiff / pMatches.length);
-    const riskLabel = avgEloDiff > 50 ? '🔥 Audacieux' : avgEloDiff > 0 ? '⚡ Challenger' : avgEloDiff > -50 ? '🎯 Équilibré' : '🛡️ Prudent';
-    const riskColor = avgEloDiff > 50 ? 'var(--red)' : avgEloDiff > 0 ? 'var(--accent)' : avgEloDiff > -50 ? 'var(--green)' : 'var(--muted)';
-
-    const wr = pMatches.length ? Math.round((p.wins||0)/pMatches.length*100) : 0;
-
-    // Trier adversaires par écart ELO
-    beaten.sort((a,b) => b.eloDiff - a.eloDiff);
-    lost.sort((a,b) => b.eloDiff - a.eloDiff);
-
-    const oppTag = (o) => {
-      const diff = o.eloDiff > 0 ? `+${o.eloDiff}` : `${o.eloDiff}`;
-      const col = o.eloDiff > 0 ? 'var(--red)' : 'var(--green)';
-      return `<span style="background:var(--bg);border-radius:8px;padding:3px 8px;font-size:11px;display:inline-flex;align-items:center;gap:4px;margin:2px">
-        ${o.name} <span style="color:${col};font-weight:700;font-size:10px">${diff}</span>
-      </span>`;
-    };
-
-    return `
-      <div class="hist-card">
-        <!-- En-tête joueur -->
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-          <div class="avatar" style="width:40px;height:40px;font-size:16px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-            ${p.name[0].toUpperCase()}
+            ${escapeHtml(p.name[0].toUpperCase())}
           </div>
           <div style="flex:1">
-            <div style="font-weight:800;font-size:15px">${p.name}</div>
-            <div style="font-size:11px;color:var(--muted)">${pMatches.length} match${pMatches.length>1?'s':''} · ${wr}% victoires · ${p.elo} pts</div>
+            <div style="font-weight:700;font-size:15px">${escapeHtml(p.name)}</div>
+            <div style="font-size:11px;color:var(--muted)">${pMatches.length} match${pMatches.length>1?'s':''}${pMatches.length ? ' · ' + wr + '% victoires' : ''}</div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:13px;font-weight:700;color:${riskColor}">${riskLabel}</div>
-            <div style="font-size:10px;color:var(--muted)">moy. ${avgEloDiff>0?'+':''}${avgEloDiff} ELO</div>
+            <div style="font-size:15px;font-weight:800"><span style="color:var(--green)">${wins}V</span> <span style="color:var(--muted)">–</span> <span style="color:var(--red)">${losses}D</span></div>
+            <div style="font-size:10px;color:var(--muted)">${p.elo} pts</div>
           </div>
+          <div style="color:var(--muted);font-size:18px;padding-left:2px">›</div>
         </div>
-
-        <!-- Barre win rate -->
-        <div style="background:var(--border);border-radius:6px;height:5px;overflow:hidden;margin-bottom:10px">
-          <div style="width:${wr}%;height:100%;background:var(--green);border-radius:6px;transition:width .4s"></div>
-        </div>
-
-        <!-- Adversaires battus -->
-        ${beaten.length > 0 ? `
-        <div style="margin-bottom:8px">
-          <div style="font-size:11px;color:var(--green);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">
-            ✓ Battu (${beaten.length})
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:2px">${beaten.map(oppTag).join('')}</div>
-        </div>` : ''}
-
-        <!-- Adversaires perdus -->
-        ${lost.length > 0 ? `
-        <div>
-          <div style="font-size:11px;color:var(--red);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">
-            ✗ Perdu contre (${lost.length})
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:2px">${lost.map(oppTag).join('')}</div>
-        </div>` : ''}
-
-        ${p.gender==='F' && vsGenderBonus > 0 ? `
-        <div style="margin-top:8px;font-size:11px;color:var(--female)">♀ ${vsGenderBonus} match${vsGenderBonus>1?'s':''} contre des garçons</div>` : ''}
       </div>`;
   }).join('');
 }
 window.renderHistory = renderHistory;
+
+// ── DÉTAIL D'UN JOUEUR (face à chaque adversaire) ───────────────────────────
+function computeHeadToHead(playerId, pMatches) {
+  const byOpp = {};
+  pMatches.forEach(m => {
+    const isWinner = m.winnerId === playerId;
+    const oppId = isWinner ? m.loserId : m.winnerId;
+    const opp = players[oppId];
+    if (!opp) return;
+    if (!byOpp[oppId]) byOpp[oppId] = { id: oppId, name: opp.name, gender: opp.gender, wins: 0, losses: 0, netDelta: 0 };
+    if (isWinner) { byOpp[oppId].wins++; byOpp[oppId].netDelta += (m.winnerDelta || 0); }
+    else { byOpp[oppId].losses++; byOpp[oppId].netDelta += (m.loserDelta || 0); }
+  });
+  return Object.values(byOpp).sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses) || a.name.localeCompare(b.name));
+}
+
+function showPlayerDetail(playerId) {
+  const p = players[playerId];
+  if (!p) return;
+  const pMatches = objArr(matches).filter(m => m.winnerId === playerId || m.loserId === playerId);
+  const wins = p.wins || 0, losses = p.losses || 0;
+  const wr = pMatches.length ? Math.round(wins / pMatches.length * 100) : 0;
+
+  if (pMatches.length === 0) {
+    showModal(`
+      <div style="font-size:32px;margin-bottom:8px">${p.gender === 'F' ? '♀' : '♂'}</div>
+      <div style="font-weight:800;font-size:17px;margin-bottom:4px">${escapeHtml(p.name)}</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Aucun match joué pour l'instant</div>
+      <button class="btn-secondary" style="width:100%" onclick="closeModal()">Fermer</button>`, null);
+    return;
+  }
+
+  let totalEloDiff = 0, vsGenderBonus = 0;
+  pMatches.forEach(m => {
+    const isWinner = m.winnerId === playerId;
+    const opp = players[isWinner ? m.loserId : m.winnerId];
+    if (!opp) return;
+    totalEloDiff += (opp.elo - p.elo);
+    if (p.gender === 'F' && opp.gender === 'M') vsGenderBonus++;
+  });
+  const avgEloDiff = Math.round(totalEloDiff / pMatches.length);
+  const riskLabel = avgEloDiff > 50 ? '🔥 Audacieux' : avgEloDiff > 0 ? '⚡ Challenger' : avgEloDiff > -50 ? '🎯 Équilibré' : '🛡️ Prudent';
+  const riskColor = avgEloDiff > 50 ? 'var(--red)' : avgEloDiff > 0 ? 'var(--accent)' : avgEloDiff > -50 ? 'var(--green)' : 'var(--muted)';
+
+  const h2h = computeHeadToHead(playerId, pMatches);
+  const h2hRows = h2h.map(o => {
+    const total = o.wins + o.losses;
+    const oppWr = total ? Math.round(o.wins / total * 100) : 0;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div class="avatar" style="width:30px;height:30px;font-size:12px;background:${o.gender === 'F' ? 'var(--female)' : 'var(--male)'}">${escapeHtml(o.name[0].toUpperCase())}</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600">${escapeHtml(o.name)}</div>
+        <div style="font-size:10px;color:var(--muted)">${total} match${total > 1 ? 's' : ''} · ${oppWr}% de victoires face à ${escapeHtml(o.name)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:13px;font-weight:800"><span style="color:var(--green)">${o.wins}V</span> – <span style="color:var(--red)">${o.losses}D</span></div>
+        <div style="font-size:10px;color:${o.netDelta >= 0 ? 'var(--green)' : 'var(--red)'}">${o.netDelta >= 0 ? '+' : ''}${o.netDelta} pts</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  showModal(`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;text-align:left">
+      <div class="avatar" style="width:44px;height:44px;font-size:18px;background:${p.gender === 'F' ? 'var(--female)' : 'var(--male)'}">${escapeHtml(p.name[0].toUpperCase())}</div>
+      <div style="flex:1">
+        <div style="font-weight:800;font-size:17px">${escapeHtml(p.name)}</div>
+        <div style="font-size:12px;color:var(--muted)">${p.elo} pts · ${pMatches.length} match${pMatches.length > 1 ? 's' : ''} · ${wr}% victoires</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:12px;font-weight:700;color:${riskColor}">${riskLabel}</div>
+        <div style="font-size:10px;color:var(--muted)">moy. ${avgEloDiff > 0 ? '+' : ''}${avgEloDiff} ELO adv.</div>
+      </div>
+    </div>
+    <div style="background:var(--border);border-radius:6px;height:5px;overflow:hidden;margin-bottom:14px">
+      <div style="width:${wr}%;height:100%;background:var(--green);border-radius:6px"></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:4px;text-align:left">Face à chaque adversaire</div>
+    <div style="text-align:left;max-height:38vh;overflow-y:auto;margin-bottom:8px">${h2hRows || '<div class="empty">Aucun adversaire</div>'}</div>
+    ${p.gender === 'F' && vsGenderBonus > 0 ? `<div style="font-size:11px;color:var(--female);text-align:left;margin-bottom:12px">♀ ${vsGenderBonus} match${vsGenderBonus > 1 ? 's' : ''} contre des garçons</div>` : ''}
+    <button class="btn-secondary" style="width:100%" onclick="closeModal()">Fermer</button>`, null);
+}
+window.showPlayerDetail = showPlayerDetail;
+
+// ── EXPORT / IMPORT D'UNE JOURNÉE DE MATCHS ─────────────────────────────────
+// Permet de sortir les matchs d'un jour donné dans un fichier .json à part
+// (autonome, lisible), pour archivage ou pour les revoir plus tard — y compris
+// sur un autre appareil, sans toucher aux données en cours. L'import est en
+// lecture seule (visionnage) : il n'écrase jamais les données actuelles.
+function groupMatchesByDay() {
+  const byDay = {};
+  objArr(matches).forEach(m => {
+    const day = (m.date || '').slice(0, 10); // YYYY-MM-DD
+    if (!day) return;
+    (byDay[day] = byDay[day] || []).push(m);
+  });
+  return Object.entries(byDay)
+    .map(([day, list]) => ({ day, matches: list.sort((a, b) => new Date(a.date) - new Date(b.date)) }))
+    .sort((a, b) => b.day.localeCompare(a.day));
+}
+
+function formatDayLabel(day) {
+  const d = new Date(day + 'T00:00:00');
+  return isNaN(d) ? day : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function renderDaysSection() {
+  const el = document.getElementById('daysSection');
+  if (!el) return;
+  const days = groupMatchesByDay();
+  el.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin:2px 0 4px';
+  el.innerHTML = days.length === 0 ? '<div class="empty">Aucun match enregistré</div>' : days.map(d => `
+    <div class="card" style="flex-direction:row;align-items:center;justify-content:space-between;padding:10px 14px">
+      <div>
+        <div style="font-weight:700;font-size:13px">${escapeHtml(formatDayLabel(d.day))}</div>
+        <div style="font-size:11px;color:var(--muted)">${d.matches.length} match${d.matches.length > 1 ? 's' : ''}</div>
+      </div>
+      <button class="btn-link" onclick="exportDayMatches('${d.day}')">⬇ Exporter</button>
+    </div>`).join('');
+}
+window.renderDaysSection = renderDaysSection;
+
+function toggleDaysSection() {
+  const el = document.getElementById('daysSection');
+  if (!el) return;
+  const show = el.style.display === 'none';
+  el.style.display = show ? 'flex' : 'none';
+  if (show) renderDaysSection();
+}
+window.toggleDaysSection = toggleDaysSection;
+
+function exportDayMatches(day) {
+  const dayData = groupMatchesByDay().find(d => d.day === day);
+  if (!dayData) return;
+  const payload = {
+    type: 'badmintonrank-journee',
+    version: 1,
+    date: day,
+    matchs: dayData.matches.map(m => ({
+      heure: new Date(m.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      vainqueur: players[m.winnerId]?.name || '?',
+      perdant: players[m.loserId]?.name || '?',
+      score: (m.sets || []).map(s => `${s.s1}-${s.s2}`).join(' '),
+      setsVainqueur: m.winnerSets, setsPerdant: m.loserSets,
+      deltaVainqueur: m.winnerDelta, deltaPerdant: m.loserDelta
+    }))
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: `badminton_journee_${day}.json`
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('Journée exportée');
+}
+window.exportDayMatches = exportDayMatches;
+
+function importDayFile() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!data || !Array.isArray(data.matchs)) { showToast('Fichier invalide — pas une journée BadmintonRank', 'err'); return; }
+        showDayViewer(data);
+      } catch (e) { showToast('Fichier JSON invalide', 'err'); }
+    };
+    reader.readAsText(file, 'UTF-8');
+  };
+  input.click();
+}
+window.importDayFile = importDayFile;
+
+function showDayViewer(data) {
+  const rows = data.matchs.map(m => `
+    <div class="hist-card" style="text-align:left">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-size:11px;color:var(--muted)">${escapeHtml(m.heure || '')}</span>
+        <span style="font-size:11px;color:var(--muted)">${escapeHtml(m.score || '')}</span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-weight:700;color:var(--green)">✓ ${escapeHtml(m.vainqueur ?? '?')}</span>
+        <span style="font-size:12px;color:var(--green)">${m.deltaVainqueur >= 0 ? '+' : ''}${m.deltaVainqueur ?? ''}</span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="color:var(--muted)">✗ ${escapeHtml(m.perdant ?? '?')}</span>
+        <span style="font-size:12px;color:var(--red)">${m.deltaPerdant ?? ''}</span>
+      </div>
+    </div>`).join('');
+  showModal(`
+    <div style="font-weight:800;font-size:17px;margin-bottom:4px;text-align:left">📅 Journée du ${escapeHtml(formatDayLabel(data.date || ''))}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;text-align:left">${data.matchs.length} match${data.matchs.length > 1 ? 's' : ''} — lecture seule, données actuelles non modifiées</div>
+    <div style="max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:14px">${rows || '<div class="empty">Aucun match dans ce fichier</div>'}</div>
+    <button class="btn-secondary" style="width:100%" onclick="closeModal()">Fermer</button>`, null);
+}
+window.showDayViewer = showDayViewer;
 
 function confirmDeleteMatch(id) {
   showModal(`<div style="font-size:32px;margin-bottom:8px">🗑️</div>
