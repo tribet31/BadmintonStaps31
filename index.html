@@ -370,6 +370,10 @@
       <button onclick="startSession()" style="background:var(--green);color:#000;border:none;border-radius:12px;padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;white-space:nowrap;min-height:44px">▶ Démarrer</button>
     </div>
 
+    <div id="undoMatchBar" style="display:none;justify-content:flex-end;margin-bottom:2px">
+      <button class="btn-link" id="undoMatchBtn" style="font-size:12px;padding:6px 12px;border-color:var(--red);color:var(--red)" onclick="confirmUndoLastMatch()">↩️ Annuler le dernier match</button>
+    </div>
+
     <div class="row">
       <h2>Nouveau match</h2>
       <select class="mini-select" id="matchGroupFilter" onchange="renderMatchTab()"><option value="all">Tous les groupes</option></select>
@@ -535,6 +539,9 @@ let players = {}, matches = {}, groups = {}, sessionsHistory = {};
 let currentTab = 'Match';
 let playerSubTab = 'list';
 let rankingGroupFilter = 'all';
+let rankingFilterTouched = false; // true dès que l'enseignant choisit lui-même un filtre (onglet Classement)
+let lastSessionParticipantIds = null; // joueurs de la dernière séance terminée (pour partager juste après la fin)
+let lastSessionEndedAt = null;
 let sets = [{s1:'15',s2:''}];
 let editingPlayerId = null;
 let confirmCallback = null;
@@ -761,6 +768,10 @@ function computeElo(winner, loser, loserSets) {
 // ── SESSION ───────────────────────────────────────────────────────────────────
 function startSession() {
   session = { startTime: new Date().toISOString(), matchIds: [], playerMatchCount: {} };
+  // Nouvelle séance = nouveau contexte : l'onglet Classement doit re-proposer
+  // par défaut "Séance en cours" plutôt que de garder un ancien filtre manuel.
+  rankingGroupFilter = 'all';
+  rankingFilterTouched = false;
   updateSessionBar();
   if (currentTab === 'Match') renderMatchTab(); // déverrouille immédiatement la grille de joueurs
   showToast('Séance démarrée !');
@@ -1003,7 +1014,14 @@ function applyEndSession() {
       matchIds: session.matchIds,
       recap: recap.map(r => ({id:r.id, nom:r.nom, prenom:r.prenom, matchCount:r.matchCount, coeff:r.coeff, eloAdjust:r.eloAdjust}))
     });
+    // Mémoriser les participants de cette séance pour que l'onglet Classement
+    // puisse proposer par défaut "Dernière séance" juste après la clôture,
+    // sans avoir à filtrer manuellement par groupe.
+    lastSessionParticipantIds = Object.keys(session.playerMatchCount || {});
+    lastSessionEndedAt = new Date().toISOString();
     session = null;
+    rankingGroupFilter = 'all';
+    rankingFilterTouched = false;
     updateSessionBar();
     // Téléchargement automatique de la sauvegarde
     setTimeout(downloadBackup, 500);
@@ -1053,6 +1071,7 @@ window.setTab = setTab;
 
 // ── MATCH TAB ────────────────────────────────────────────────────────────────
 function renderMatchTab() {
+  updateUndoBar();
   // Si groupe actif : utiliser le cache — aucun recalcul, aucun accès réseau
   if (activeGroupId) {
     const filterSel = document.getElementById('matchGroupFilter');
@@ -1317,6 +1336,93 @@ function submitMatch() {
 }
 window.submitMatch = submitMatch;
 
+// ── ANNULER LE DERNIER MATCH ─────────────────────────────────────────────────
+// Retrouve le match le plus récemment enregistré (par date), tous groupes confondus.
+function getLastMatch() {
+  const arr = objArr(matches);
+  if (arr.length === 0) return null;
+  return arr.reduce((a, b) => new Date(a.date) > new Date(b.date) ? a : b);
+}
+
+// Affiche/masque le bouton "Annuler le dernier match" en haut de l'onglet Match,
+// avec le nom des 2 joueurs concernés pour éviter tout clic à l'aveugle.
+function updateUndoBar() {
+  const bar = document.getElementById('undoMatchBar');
+  if (!bar) return;
+  const m = getLastMatch();
+  if (!m) { bar.style.display = 'none'; return; }
+  const btn = document.getElementById('undoMatchBtn');
+  const winner = players[m.winnerId], loser = players[m.loserId];
+  const label = winner && loser ? `${shortDisplay(winner)} vs ${shortDisplay(loser)}` : '';
+  btn.textContent = `↩️ Annuler${label ? ' : ' + label : ' le dernier match'}`;
+  bar.style.display = 'flex';
+}
+
+// Réajuste l'ELO, victoires/défaites/matchs joués d'un match donné en sens inverse —
+// utilisé à la fois par l'annulation du dernier match et par la suppression d'un match.
+async function reverseMatchEffects(m) {
+  const winner = players[m.winnerId], loser = players[m.loserId];
+  if (winner) {
+    await fbUpdate(`players/${m.winnerId}`, {
+      elo: Math.max(100, (winner.elo || 1000) - (m.winnerDelta || 0)),
+      wins: Math.max(0, (winner.wins || 0) - 1),
+      played: Math.max(0, (winner.played || 0) - 1)
+    });
+  }
+  if (loser) {
+    await fbUpdate(`players/${m.loserId}`, {
+      elo: Math.max(100, (loser.elo || 1000) - (m.loserDelta || 0)),
+      losses: Math.max(0, (loser.losses || 0) - 1),
+      played: Math.max(0, (loser.played || 0) - 1)
+    });
+  }
+}
+
+// Retire un match de la séance en cours si celle-ci le concernait (utilisé après
+// annulation/suppression, pour que le bonus d'activité de fin de séance reste juste).
+function untrackMatchFromSession(m, matchId) {
+  if (!session || !session.matchIds.includes(matchId)) return;
+  session.matchIds = session.matchIds.filter(x => x !== matchId);
+  [m.winnerId, m.loserId].forEach(pid => {
+    if (session.playerMatchCount[pid]) {
+      session.playerMatchCount[pid]--;
+      if (session.playerMatchCount[pid] <= 0) delete session.playerMatchCount[pid];
+    }
+  });
+}
+
+function confirmUndoLastMatch() {
+  const m = getLastMatch();
+  if (!m) { showToast('Aucun match à annuler', 'err'); return; }
+  const winner = players[m.winnerId], loser = players[m.loserId];
+  const score = (m.sets || []).map(s => `${s.s1}-${s.s2}`).join(' ');
+  showModal(`
+    <div style="font-size:32px;margin-bottom:8px">↩️</div>
+    <div style="font-weight:800;font-size:17px;margin-bottom:4px">Annuler le dernier match ?</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.5">
+      <span style="color:var(--green);font-weight:700">${escapeHtml(fullName(winner))}</span> ${m.winnerSets}–${m.loserSets} ${escapeHtml(fullName(loser))}${score ? ` (${escapeHtml(score)})` : ''}<br/>
+      Les points ELO et le nombre de victoires/défaites seront réajustés.
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" style="background:var(--red);flex:1" onclick="doConfirm()">Annuler ce match</button>
+      <button class="btn-secondary" style="flex:1" onclick="closeModal()">Retour</button>
+    </div>`, () => undoLastMatch(m.id));
+}
+window.confirmUndoLastMatch = confirmUndoLastMatch;
+
+function undoLastMatch(id) {
+  const m = matches[id];
+  if (!m) return;
+  setSyncing(true);
+  run(async () => {
+    await reverseMatchEffects(m);
+    untrackMatchFromSession(m, id);
+    await fbDelete(`matches/${id}`);
+    updateSessionBar();
+  }, 'Dernier match annulé, scores réajustés');
+}
+window.undoLastMatch = undoLastMatch;
+
 // ── PLAYERS TAB ───────────────────────────────────────────────────────────────
 function setPlayerSubTab(t) {
   playerSubTab=t;
@@ -1558,20 +1664,54 @@ function toggleGroupExclusive(playerId, groupId, checked) {
 window.toggleGroupExclusive = toggleGroupExclusive;
 
 // ── RANKING TAB ───────────────────────────────────────────────────────────────
+// Le classement (et donc le QR/partage) peut être filtré : tous les joueurs,
+// la séance en cours, la dernière séance terminée, ou un groupe précis. Par
+// défaut (tant que l'enseignant n'a pas choisi lui-même un filtre), on essaie
+// de refléter "la saisie active" plutôt que la totalité des joueurs jamais
+// enregistrés : groupe actif > séance en cours > dernière séance > tous.
 function renderRanking() {
   const gArr = objArr(groups);
   const pArr = sortedPlayers();
 
-  // Par défaut, afficher le groupe actif
-  if (rankingGroupFilter === 'all' && activeGroupId) rankingGroupFilter = activeGroupId;
+  const sessionParticipantIds = session ? Object.keys(session.playerMatchCount || {}) : [];
+  const sessionActive = sessionParticipantIds.length > 0;
+  const lastSessionAvailable = !sessionActive && lastSessionParticipantIds && lastSessionParticipantIds.length > 0;
 
-  const filtered = rankingGroupFilter==='all' ? pArr
-    : pArr.filter(p=>(gArr.find(g=>g.id===rankingGroupFilter)?.playerIds||[]).includes(p.id));
+  if (!rankingFilterTouched) {
+    if (activeGroupId) rankingGroupFilter = activeGroupId;
+    else if (sessionActive) rankingGroupFilter = 'session';
+    else if (lastSessionAvailable) rankingGroupFilter = 'lastSession';
+    else rankingGroupFilter = 'all';
+  }
+  // Si le contexte qui justifiait le filtre a disparu entre-temps (séance
+  // terminée pendant qu'on regardait, groupe supprimé...), on retombe proprement.
+  if (rankingGroupFilter === 'session' && !sessionActive) rankingGroupFilter = lastSessionAvailable ? 'lastSession' : 'all';
+  if (rankingGroupFilter === 'lastSession' && !lastSessionAvailable) rankingGroupFilter = 'all';
+  if (!['all','session','lastSession'].includes(rankingGroupFilter) && !gArr.find(g=>g.id===rankingGroupFilter)) rankingGroupFilter = 'all';
+
+  let filtered, filterLabel;
+  if (rankingGroupFilter === 'session') {
+    filtered = pArr.filter(p => sessionParticipantIds.includes(p.id));
+    filterLabel = 'Séance en cours';
+  } else if (rankingGroupFilter === 'lastSession') {
+    filtered = pArr.filter(p => (lastSessionParticipantIds||[]).includes(p.id));
+    filterLabel = 'Dernière séance';
+  } else if (rankingGroupFilter === 'all') {
+    filtered = pArr;
+    filterLabel = null;
+  } else {
+    const g = gArr.find(g=>g.id===rankingGroupFilter);
+    filtered = pArr.filter(p=>(g?.playerIds||[]).includes(p.id));
+    filterLabel = g ? g.name : null;
+  }
   const medals = ['🥇','🥈','🥉'];
 
   const filtersEl = document.getElementById('rankingFilters');
-  filtersEl.innerHTML = `<button class="chip ${rankingGroupFilter==='all'?'active':''}" onclick="setRankFilter('all')">Tous</button>`
-    + gArr.map(g=>`<button class="chip ${rankingGroupFilter===g.id?'active':''}" onclick="setRankFilter('${g.id}')">${g.name}</button>`).join('');
+  let chipsHtml = `<button class="chip ${rankingGroupFilter==='all'?'active':''}" onclick="setRankFilter('all')">Tous</button>`;
+  if (sessionActive) chipsHtml += `<button class="chip ${rankingGroupFilter==='session'?'active':''}" onclick="setRankFilter('session')">🎯 Séance en cours</button>`;
+  else if (lastSessionAvailable) chipsHtml += `<button class="chip ${rankingGroupFilter==='lastSession'?'active':''}" onclick="setRankFilter('lastSession')">🎯 Dernière séance</button>`;
+  chipsHtml += gArr.map(g=>`<button class="chip ${rankingGroupFilter===g.id?'active':''}" onclick="setRankFilter('${g.id}')">${g.name}</button>`).join('');
+  filtersEl.innerHTML = chipsHtml;
 
   const listEl = document.getElementById('rankingList');
   listEl.style.display='flex'; listEl.style.flexDirection='column'; listEl.style.gap='8px';
@@ -1594,7 +1734,7 @@ function renderRanking() {
       </div>`;
     }).join('');
 
-  renderRankingQr(filtered, groups[activeGroupId] || null);
+  renderRankingQr(filtered, filterLabel);
 }
 
 // ── QR CODE 100% LOCAL ──────────────────────────────────────────────────────
@@ -1636,14 +1776,13 @@ function buildClassementText(list, groupName) {
   return title + '\n' + list.map((p,i) => `${i+1}. ${fullName(p)} — ${p.elo} pts`).join('\n');
 }
 
-function renderRankingQr(list, activeGrp) {
+function renderRankingQr(list, groupName) {
   const box = document.getElementById('qrBox');
   if (!box) return;
   if (list.length === 0) {
     box.innerHTML = `<div class="empty">Ajoutez des joueurs pour générer le QR du classement</div>`;
     return;
   }
-  const groupName = activeGrp ? activeGrp.name : null;
   const baseUrl = getClassementBaseUrl();
 
   let svg = null, mode = 'url', n = list.length;
@@ -1699,7 +1838,7 @@ function shareRankingText() {
 }
 window.shareRankingText = shareRankingText;
 
-function setRankFilter(id) { rankingGroupFilter=id; renderRanking(); }
+function setRankFilter(id) { rankingGroupFilter=id; rankingFilterTouched=true; renderRanking(); }
 window.setRankFilter = setRankFilter;
 window.showToast = showToast;
 
@@ -2132,6 +2271,7 @@ function showDayViewer(data) {
 window.showDayViewer = showDayViewer;
 
 function confirmDeleteMatch(id) {
+  const m = matches[id];
   showModal(`<div style="font-size:32px;margin-bottom:8px">🗑️</div>
     <div style="font-weight:700;margin-bottom:16px">Supprimer ce match ?</div>
     <div style="display:flex;gap:8px">
@@ -2139,7 +2279,10 @@ function confirmDeleteMatch(id) {
       <button class="btn-secondary" style="flex:1" onclick="closeModal()">Annuler</button>
     </div>`, ()=>{
     setSyncing(true);
-    run(() => fbDelete(`matches/${id}`), 'Match supprimé');
+    run(async () => {
+      if (m) { await reverseMatchEffects(m); untrackMatchFromSession(m, id); }
+      await fbDelete(`matches/${id}`);
+    }, 'Match supprimé, scores réajustés');
   });
 }
 window.confirmDeleteMatch = confirmDeleteMatch;
@@ -2155,6 +2298,10 @@ window.skipGroupSelection = skipGroupSelection;
 function initActiveGroup(groupId) {
   activeGroupId = groupId;
   sessionStorage.setItem('activeGroupId', groupId || '');
+  // Nouveau contexte de groupe : laisser l'onglet Classement re-choisir son
+  // filtre par défaut (groupe actif / séance en cours / dernière séance).
+  rankingGroupFilter = 'all';
+  rankingFilterTouched = false;
   document.getElementById('groupScreen').style.display = 'none';
   // Construire le cache une seule fois : liste des joueurs du groupe actif
   if (groupId && groups[groupId]) {
