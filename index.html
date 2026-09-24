@@ -198,6 +198,10 @@
     }
     .chip.active { background: rgba(245,158,11,.12); border-color: var(--accent); color: var(--accent); }
     .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+    .ranking-scope-label {
+      display: inline-block; background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3);
+      color: var(--accent); border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700;
+    }
 
     /* QR */
     .qr-box { background: var(--card); border: 1px solid var(--border); border-radius: 16px;
@@ -538,8 +542,6 @@ let _data = { players:{}, matches:{}, groups:{}, sessions:{} };
 let players = {}, matches = {}, groups = {}, sessionsHistory = {};
 let currentTab = 'Match';
 let playerSubTab = 'list';
-let rankingGroupFilter = 'all';
-let rankingFilterTouched = false; // true dès que l'enseignant choisit lui-même un filtre (onglet Classement)
 let lastSessionParticipantIds = null; // joueurs de la dernière séance terminée (pour partager juste après la fin)
 let lastSessionEndedAt = null;
 let sets = [{s1:'15',s2:''}];
@@ -768,10 +770,6 @@ function computeElo(winner, loser, loserSets) {
 // ── SESSION ───────────────────────────────────────────────────────────────────
 function startSession() {
   session = { startTime: new Date().toISOString(), matchIds: [], playerMatchCount: {} };
-  // Nouvelle séance = nouveau contexte : l'onglet Classement doit re-proposer
-  // par défaut "Séance en cours" plutôt que de garder un ancien filtre manuel.
-  rankingGroupFilter = 'all';
-  rankingFilterTouched = false;
   updateSessionBar();
   if (currentTab === 'Match') renderMatchTab(); // déverrouille immédiatement la grille de joueurs
   showToast('Séance démarrée !');
@@ -1015,13 +1013,10 @@ function applyEndSession() {
       recap: recap.map(r => ({id:r.id, nom:r.nom, prenom:r.prenom, matchCount:r.matchCount, coeff:r.coeff, eloAdjust:r.eloAdjust}))
     });
     // Mémoriser les participants de cette séance pour que l'onglet Classement
-    // puisse proposer par défaut "Dernière séance" juste après la clôture,
-    // sans avoir à filtrer manuellement par groupe.
+    // affiche automatiquement "Dernière séance" juste après la clôture.
     lastSessionParticipantIds = Object.keys(session.playerMatchCount || {});
     lastSessionEndedAt = new Date().toISOString();
     session = null;
-    rankingGroupFilter = 'all';
-    rankingFilterTouched = false;
     updateSessionBar();
     // Téléchargement automatique de la sauvegarde
     setTimeout(downloadBackup, 500);
@@ -1664,54 +1659,46 @@ function toggleGroupExclusive(playerId, groupId, checked) {
 window.toggleGroupExclusive = toggleGroupExclusive;
 
 // ── RANKING TAB ───────────────────────────────────────────────────────────────
-// Le classement (et donc le QR/partage) peut être filtré : tous les joueurs,
-// la séance en cours, la dernière séance terminée, ou un groupe précis. Par
-// défaut (tant que l'enseignant n'a pas choisi lui-même un filtre), on essaie
-// de refléter "la saisie active" plutôt que la totalité des joueurs jamais
-// enregistrés : groupe actif > séance en cours > dernière séance > tous.
+// Pas de sélecteur de groupe ici : afficher/partager un autre groupe se fait
+// en tapant "🔄 Changer de groupe" (retour à l'écran "Choisir le groupe"), pas
+// depuis une liste de boutons dans cet onglet — pour éviter de faire ressurgir
+// d'anciens groupes de test/promotions précédentes au milieu du classement en
+// cours. Le classement affiché est toujours celui de "la saisie active",
+// déterminé automatiquement, sans action de l'enseignant :
+//   1. le groupe actif de la séance, s'il y en a un ;
+//   2. sinon les joueurs ayant déjà joué dans la séance en cours ;
+//   3. sinon les joueurs de la dernière séance tout juste terminée ;
+//   4. sinon tous les joueurs (aucune séance n'a encore eu lieu).
 function renderRanking() {
-  const gArr = objArr(groups);
   const pArr = sortedPlayers();
 
   const sessionParticipantIds = session ? Object.keys(session.playerMatchCount || {}) : [];
   const sessionActive = sessionParticipantIds.length > 0;
   const lastSessionAvailable = !sessionActive && lastSessionParticipantIds && lastSessionParticipantIds.length > 0;
 
-  if (!rankingFilterTouched) {
-    if (activeGroupId) rankingGroupFilter = activeGroupId;
-    else if (sessionActive) rankingGroupFilter = 'session';
-    else if (lastSessionAvailable) rankingGroupFilter = 'lastSession';
-    else rankingGroupFilter = 'all';
-  }
-  // Si le contexte qui justifiait le filtre a disparu entre-temps (séance
-  // terminée pendant qu'on regardait, groupe supprimé...), on retombe proprement.
-  if (rankingGroupFilter === 'session' && !sessionActive) rankingGroupFilter = lastSessionAvailable ? 'lastSession' : 'all';
-  if (rankingGroupFilter === 'lastSession' && !lastSessionAvailable) rankingGroupFilter = 'all';
-  if (!['all','session','lastSession'].includes(rankingGroupFilter) && !gArr.find(g=>g.id===rankingGroupFilter)) rankingGroupFilter = 'all';
-
   let filtered, filterLabel;
-  if (rankingGroupFilter === 'session') {
+  if (activeGroupId && groups[activeGroupId]) {
+    const g = groups[activeGroupId];
+    filtered = pArr.filter(p => (g.playerIds||[]).includes(p.id));
+    filterLabel = g.name;
+  } else if (sessionActive) {
     filtered = pArr.filter(p => sessionParticipantIds.includes(p.id));
     filterLabel = 'Séance en cours';
-  } else if (rankingGroupFilter === 'lastSession') {
+  } else if (lastSessionAvailable) {
     filtered = pArr.filter(p => (lastSessionParticipantIds||[]).includes(p.id));
     filterLabel = 'Dernière séance';
-  } else if (rankingGroupFilter === 'all') {
+  } else {
     filtered = pArr;
     filterLabel = null;
-  } else {
-    const g = gArr.find(g=>g.id===rankingGroupFilter);
-    filtered = pArr.filter(p=>(g?.playerIds||[]).includes(p.id));
-    filterLabel = g ? g.name : null;
   }
   const medals = ['🥇','🥈','🥉'];
 
   const filtersEl = document.getElementById('rankingFilters');
-  let chipsHtml = `<button class="chip ${rankingGroupFilter==='all'?'active':''}" onclick="setRankFilter('all')">Tous</button>`;
-  if (sessionActive) chipsHtml += `<button class="chip ${rankingGroupFilter==='session'?'active':''}" onclick="setRankFilter('session')">🎯 Séance en cours</button>`;
-  else if (lastSessionAvailable) chipsHtml += `<button class="chip ${rankingGroupFilter==='lastSession'?'active':''}" onclick="setRankFilter('lastSession')">🎯 Dernière séance</button>`;
-  chipsHtml += gArr.map(g=>`<button class="chip ${rankingGroupFilter===g.id?'active':''}" onclick="setRankFilter('${g.id}')">${g.name}</button>`).join('');
-  filtersEl.innerHTML = chipsHtml;
+  if (filtersEl) {
+    filtersEl.innerHTML = filterLabel
+      ? `<span class="ranking-scope-label">📁 ${escapeHtml(filterLabel)}</span>`
+      : '';
+  }
 
   const listEl = document.getElementById('rankingList');
   listEl.style.display='flex'; listEl.style.flexDirection='column'; listEl.style.gap='8px';
@@ -1806,7 +1793,7 @@ function renderRankingQr(list, groupName) {
     try {
       svg = window.QR.toSVG(buildClassementText(list, groupName), { errorCorrectionLevel:'M', darkHex:'#0a0f1e', lightHex:'#ffffff', margin:2, width:196 });
     } catch (e) {
-      box.innerHTML = `<div class="empty">Classement trop long pour un QR code (${list.length} joueurs) — filtrez par groupe pour réduire.</div>`;
+      box.innerHTML = `<div class="empty">Classement trop long pour un QR code (${list.length} joueurs) — utilisez "🔄 Changer de groupe" pour cibler un groupe plus réduit.</div>`;
       return;
     }
   }
@@ -1838,8 +1825,6 @@ function shareRankingText() {
 }
 window.shareRankingText = shareRankingText;
 
-function setRankFilter(id) { rankingGroupFilter=id; rankingFilterTouched=true; renderRanking(); }
-window.setRankFilter = setRankFilter;
 window.showToast = showToast;
 
 function exportCSV() {
@@ -2298,10 +2283,6 @@ window.skipGroupSelection = skipGroupSelection;
 function initActiveGroup(groupId) {
   activeGroupId = groupId;
   sessionStorage.setItem('activeGroupId', groupId || '');
-  // Nouveau contexte de groupe : laisser l'onglet Classement re-choisir son
-  // filtre par défaut (groupe actif / séance en cours / dernière séance).
-  rankingGroupFilter = 'all';
-  rankingFilterTouched = false;
   document.getElementById('groupScreen').style.display = 'none';
   // Construire le cache une seule fois : liste des joueurs du groupe actif
   if (groupId && groups[groupId]) {
