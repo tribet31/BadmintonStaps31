@@ -1,284 +1,127 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-  <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <meta name="theme-color" content="#0a0f1e"/>
-  <title>🏸 Classement Badminton</title>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"/>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-    :root {
-      --bg: #0a0f1e; --card: #111827; --border: #1f2d40;
-      --accent: #f59e0b; --text: #f1f5f9; --muted: #64748b;
-      --green: #10b981; --red: #ef4444; --female: #ec4899; --male: #3b82f6;
-      --safe-top: env(safe-area-inset-top, 0px);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-    }
-    html { height: -webkit-fill-available; }
-    body {
-      font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text);
-      max-width: 480px; margin: 0 auto; min-height: 100vh;
-      padding-bottom: calc(20px + var(--safe-bottom));
-      -webkit-font-smoothing: antialiased;
-    }
-    .bg-glow { position: fixed; inset: 0; pointer-events: none; z-index: 0;
-      background: radial-gradient(ellipse at 15% 0%, rgba(245,158,11,0.07) 0%, transparent 55%),
-                  radial-gradient(ellipse at 85% 100%, rgba(59,130,246,0.05) 0%, transparent 55%); }
-
-    header {
-      position: sticky; top: 0; z-index: 10;
-      background: rgba(10,15,30,0.97); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      border-bottom: 1px solid var(--border);
-      padding: 12px 18px; padding-top: calc(12px + var(--safe-top));
-      display: flex; align-items: center; gap: 12px;
-    }
-    .header-title { font-size: 19px; font-weight: 800; color: var(--accent); letter-spacing: -0.5px; }
-    .header-sub { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 1px; }
-    .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green);
-      box-shadow: 0 0 8px var(--green); margin-left: auto; flex-shrink: 0;
-      animation: pulse 2s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.85)} }
-
-    main { padding: 14px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 12px; }
-
-    /* STATS BANNER */
-    .stats-banner { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
-    .stat-box { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-      padding: 14px 8px; text-align: center; }
-    .stat-val { font-size: 24px; font-weight: 800; color: var(--accent); }
-    .stat-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-top: 3px; font-weight: 600; }
-
-    /* SEARCH */
-    input[type=text] {
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-      padding: 13px 16px; color: var(--text); font-size: 16px; width: 100%;
-      font-family: 'DM Sans', sans-serif; outline: none; min-height: 48px;
-    }
-    input:focus { border-color: rgba(245,158,11,0.5); }
-
-    /* FILTERS */
-    .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; }
-    .chip { background: var(--card); border: 1px solid var(--border); color: var(--muted);
-      border-radius: 20px; padding: 7px 14px; font-size: 13px; cursor: pointer;
-      font-family: 'DM Sans', sans-serif; min-height: 36px; font-weight: 600; }
-    .chip.active { background: rgba(245,158,11,.12); border-color: var(--accent); color: var(--accent); }
-
-    /* RANKING */
-    .rank-list { display: flex; flex-direction: column; gap: 8px; }
-    .rank-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-      padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: 64px;
-      animation: slideIn .3s ease backwards; }
-    .rank-card.top3 { border-color: rgba(245,158,11,.35); background: rgba(245,158,11,.04); }
-    @keyframes slideIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
-
-    .rank-num { width: 32px; text-align: center; flex-shrink: 0; }
-    .avatar { border-radius: 50%; display: flex; align-items: center; justify-content: center;
-      font-weight: 800; color: #fff; flex-shrink: 0; }
-    .rank-info { flex: 1; min-width: 0; }
-    .rank-name { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .rank-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
-    .rank-group { color: var(--accent); }
-    .win-bar-bg { background: var(--border); border-radius: 4px; height: 3px; overflow: hidden; margin-top: 5px; }
-    .win-bar-fill { height: 100%; border-radius: 4px; background: var(--green); }
-    .rank-elo-block { text-align: right; flex-shrink: 0; }
-    .rank-elo { font-size: 22px; font-weight: 800; color: var(--accent); line-height: 1; }
-    .rank-pts { font-size: 10px; color: var(--muted); margin-top: 2px; }
-
-    /* QR */
-    .qr-box { background: var(--card); border: 1px solid var(--border); border-radius: 16px;
-      padding: 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
-    .qr-img { border-radius: 12px; border: 3px solid var(--accent); }
-    .btn-share { background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3);
-      color: var(--accent); border-radius: 12px; padding: 14px; font-size: 15px;
-      cursor: pointer; width: 100%; font-family: 'DM Sans', sans-serif; min-height: 52px; font-weight: 700; }
-
-    /* UPDATE */
-    .update-bar { font-size: 11px; color: var(--muted); text-align: center; }
-
-    /* LOADING */
-    .loading { display: flex; flex-direction: column; align-items: center; justify-content: center;
-      min-height: 60vh; gap: 16px; }
-    .spin { font-size: 48px; animation: spin 1.5s linear infinite; display: inline-block; }
-    @keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
-
-    .empty { color: var(--muted); text-align: center; padding: 32px 0; font-size: 15px; }
-    * { -webkit-tap-highlight-color: transparent; }
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>🏸 Classement</title>
+<!--
+  Page statique et 100% autonome : elle ne contacte AUCUN serveur et ne lit
+  AUCUNE base de données. Le classement entier est encodé dans le paramètre
+  "d" de l'URL (voir index.html, fonction buildClassementUrl) — cette page se
+  contente de le décoder et de l'afficher. Elle doit vivre dans le MÊME dossier
+  que index.html (même hébergement) pour que le lien généré par le QR code
+  fonctionne : le QR ne fait que pointer vers ce fichier avec les données
+  dans le lien lui-même, rien n'est stocké ni interrogé côté serveur.
+-->
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --bg:#0a0f1e;--card:#111827;--border:#1f2d40;--accent:#f59e0b;--text:#f1f5f9;--muted:#64748b;
+    --green:#10b981;--female:#ec4899;--male:#3b82f6;
+    --safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);
+  }
+  html{height:-webkit-fill-available}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;
+    background:var(--bg);color:var(--text);max-width:480px;margin:0 auto;
+    min-height:100vh;min-height:-webkit-fill-available;
+    padding:calc(20px + var(--safe-top)) 16px calc(24px + var(--safe-bottom));
+    -webkit-font-smoothing:antialiased;
+  }
+  header{text-align:center;margin-bottom:18px}
+  header .logo{font-size:38px;display:block;margin-bottom:6px}
+  h1{font-size:20px;font-weight:800;color:var(--accent);letter-spacing:-.3px}
+  .sub{font-size:12px;color:var(--muted);margin-top:4px}
+  .list{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+  .rank-card{background:var(--card);border:1px solid var(--border);border-radius:14px;
+    padding:13px 14px;display:flex;align-items:center;gap:12px}
+  .rank-card.top3{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.04)}
+  .pos{width:30px;text-align:center;font-size:13px;color:var(--muted);flex-shrink:0}
+  .pos.medal{font-size:20px}
+  .avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-weight:800;color:#fff;flex-shrink:0;font-size:15px}
+  .name{flex:1;font-weight:700;font-size:15px;word-break:break-word}
+  .pts{font-size:19px;font-weight:800;color:var(--accent);white-space:nowrap}
+  .empty,.error{text-align:center;color:var(--muted);padding:48px 16px;font-size:14px}
+  .error{color:#ef4444}
+  footer{text-align:center;color:var(--muted);font-size:11px;margin-top:24px}
+</style>
 </head>
 <body>
-<div class="bg-glow"></div>
-
-<header>
-  <span style="font-size:26px">🏸</span>
-  <div>
-    <div class="header-title">BadmintonRank</div>
-    <div class="header-sub" id="headerSub">Classement en direct</div>
-  </div>
-  <div class="live-dot" title="Temps réel"></div>
-</header>
-
-<main id="app">
-  <div class="loading">
-    <span class="spin">🏸</span>
-    <div style="color:var(--accent);font-weight:700;font-size:18px">Chargement…</div>
-  </div>
-</main>
+  <header>
+    <span class="logo">🏸</span>
+    <h1 id="title">Classement</h1>
+    <div class="sub" id="subtitle"></div>
+  </header>
+  <div class="list" id="list"></div>
+  <footer id="footer" style="display:none">Généré par BadmintonRank — hors connexion</footer>
 
 <script>
-const BIN_ID  = "69bc8057c3097a1dd53f20db";
-const API_KEY = "$2a$10$XTzK1mpZw16YKGNxiOp3ue/eOxXfkyxefdDl6NFPLfhZVRBPTVVne";
-const BIN_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
-const BASE_URL = "https://tribet31.github.io/BadmintonStaps31/classement.html";
-
-// Lire le paramètre ?groupe= dans l'URL
-const urlParams = new URLSearchParams(window.location.search);
-const groupeParam = urlParams.get('groupe') || '';
-
-let allPlayers = {}, allGroups = {};
-let currentGroup = 'all';
-let searchQuery = '';
-let initialized = false;
-
-function objArr(obj) { return obj ? Object.entries(obj).map(([id,v])=>({...v,id})) : []; }
-function getPlayerGroup(id) { return objArr(allGroups).find(g=>(g.playerIds||[]).includes(id)); }
-
-async function loadData() {
-  try {
-    const r = await fetch(BIN_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
-    const j = await r.json();
-    const d = j.record || {};
-    allPlayers = d.players || {};
-    allGroups  = d.groups  || {};
-
-    // Appliquer le filtre groupe depuis l'URL si présent
-    if (!initialized && groupeParam) {
-      const gArr = objArr(allGroups);
-      const found = gArr.find(g => g.name.toLowerCase() === groupeParam.toLowerCase());
-      if (found) currentGroup = found.id;
-    }
-    initialized = true;
-    render();
-  } catch(e) {
-    document.getElementById('app').innerHTML = `<div style="color:#ef4444;text-align:center;padding:40px">Erreur de chargement</div>`;
-  }
+// Décodage du classement encodé dans l'URL : ?d=<base64 url-safe d'un JSON compact>
+// { g: nom du groupe ou null, t: date ISO, p: [[nom, points], ...] déjà triés }
+// Aucun réseau, aucune base de données : tout est dans le lien lui-même.
+function b64urlToStr(b64url) {
+  let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4) b64 += '=';
+  return decodeURIComponent(escape(atob(b64)));
 }
 
-loadData();
-setInterval(loadData, 15000);
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 function render() {
-  const app = document.getElementById('app');
-  const now = new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  const gArr = objArr(allGroups);
+  const params = new URLSearchParams(location.search);
+  const raw = params.get('d');
+  const listEl = document.getElementById('list');
+  const footerEl = document.getElementById('footer');
 
-  // Groupe actif
-  const activeGrp = currentGroup !== 'all' ? allGroups[currentGroup] : null;
-
-  // Mettre à jour le sous-titre du header
-  const sub = document.getElementById('headerSub');
-  if (sub) sub.textContent = activeGrp ? activeGrp.name : 'Classement en direct';
-
-  let players = objArr(allPlayers).sort((a,b)=>b.elo-a.elo);
-
-  // Filtre groupe
-  if (currentGroup !== 'all') {
-    players = players.filter(p=>(allGroups[currentGroup]?.playerIds||[]).includes(p.id));
+  if (!raw) {
+    document.getElementById('subtitle').textContent = '';
+    listEl.innerHTML = '<div class="empty">Aucun classement dans ce lien.</div>';
+    return;
   }
 
-  // Filtre recherche
-  if (searchQuery) players = players.filter(p=>p.name.toLowerCase().includes(searchQuery.toLowerCase()));
-
-  // Stats sur le groupe filtré
-  const total = players.length;
-  const females = players.filter(p=>p.gender==='F').length;
-  const totalMatches = Math.round(players.reduce((a,p)=>a+(p.played||0),0)/2);
-  const medals = ['🥇','🥈','🥉'];
-
-  // URL et QR du groupe actif
-  const PUBLIC_URL = activeGrp
-    ? `${BASE_URL}?groupe=${encodeURIComponent(activeGrp.name)}`
-    : BASE_URL;
-  const QR_URL = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(PUBLIC_URL)}`;
-
-  let html = `<div class="update-bar">🔄 Mis à jour à ${now}</div>`;
-
-  // Stats
-  html += `<div class="stats-banner">
-    <div class="stat-box"><div class="stat-val">${total}</div><div class="stat-lbl">Joueurs</div></div>
-    <div class="stat-box"><div class="stat-val">${totalMatches}</div><div class="stat-lbl">Matchs</div></div>
-    <div class="stat-box"><div class="stat-val">${females}</div><div class="stat-lbl">Femmes</div></div>
-  </div>`;
-
-  // Recherche
-  html += `<input type="text" id="searchInput" placeholder="🔍 Rechercher un joueur…" value="${searchQuery}" oninput="setSearch(this.value)"/>`;
-
-  // Filtres groupes
-  if (gArr.length > 0) {
-    html += `<div class="filter-bar">
-      <button class="chip ${currentGroup==='all'?'active':''}" onclick="setGroup('all')">Tous</button>
-      ${gArr.map(g=>`<button class="chip ${currentGroup===g.id?'active':''}" onclick="setGroup('${g.id}')">${g.name}</button>`).join('')}
-    </div>`;
+  let data;
+  try {
+    data = JSON.parse(b64urlToStr(raw));
+  } catch (e) {
+    listEl.innerHTML = '<div class="error">Lien invalide ou corrompu.</div>';
+    return;
   }
 
-  // Classement
-  html += `<div class="rank-list">`;
+  const title = data.g ? `Classement — ${data.g}` : 'Classement';
+  document.title = '🏸 ' + title;
+  document.getElementById('title').textContent = title;
+  const d = data.t ? new Date(data.t) : null;
+  document.getElementById('subtitle').textContent = d && !isNaN(d)
+    ? 'Généré le ' + d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+    : '';
+
+  const players = Array.isArray(data.p) ? data.p : [];
   if (players.length === 0) {
-    html += `<div class="empty">Aucun joueur trouvé</div>`;
-  } else {
-    players.forEach((p, i) => {
-      const wr = p.played ? Math.round(p.wins/p.played*100) : 0;
-      const isTop3 = i < 3 && !searchQuery;
-      const avatarBg = p.gender==='F' ? 'var(--female)' : 'var(--male)';
-      html += `
-        <div class="rank-card ${isTop3?'top3':''}" style="animation-delay:${i*35}ms">
-          <div class="rank-num" style="font-size:${isTop3?'22':'13'}px;color:${!isTop3?'var(--muted)':'inherit'}">
-            ${medals[i] || '#'+(i+1)}
-          </div>
-          <div class="avatar" style="width:44px;height:44px;font-size:18px;font-weight:800;background:${avatarBg}">
-            ${p.name[0].toUpperCase()}
-          </div>
-          <div class="rank-info">
-            <div class="rank-name">${p.name}</div>
-            <div class="rank-meta">
-              ${p.gender==='F'?'♀ Femme':'♂ Homme'}
-              · ${p.wins||0}V ${p.losses||0}D · ${wr}%
-            </div>
-            <div class="win-bar-bg"><div class="win-bar-fill" style="width:${wr}%"></div></div>
-          </div>
-          <div class="rank-elo-block">
-            <div class="rank-elo">${p.elo}</div>
-            <div class="rank-pts">points</div>
-          </div>
-        </div>`;
-    });
+    listEl.innerHTML = '<div class="empty">Aucun joueur dans ce classement.</div>';
+    return;
   }
-  html += `</div>`;
 
-  // QR code
-  html += `
-    <div class="qr-box">
-      <div style="font-weight:700;font-size:15px">📱 ${activeGrp ? activeGrp.name : 'Classement général'}</div>
-      <div style="font-size:12px;color:var(--muted);text-align:center">Scannez pour ouvrir sur votre téléphone</div>
-      <img src="${QR_URL}" class="qr-img" width="200" height="200" alt="QR Code"/>
-      <button class="btn-share" onclick="navigator.clipboard?.writeText('${PUBLIC_URL}').then(()=>this.textContent='✓ Lien copié !').catch(()=>{})">
-        📋 Copier le lien
-      </button>
+  const medals = ['🥇', '🥈', '🥉'];
+  listEl.innerHTML = players.map((entry, i) => {
+    const name = String(entry[0] ?? '');
+    const pts = entry[1] ?? '';
+    const initial = name ? name[0].toUpperCase() : '?';
+    // Couleur d'avatar dérivée du nom (pas de données de genre transmises, pour rester compact) :
+    const hue = Array.from(name).reduce((h, c) => h + c.charCodeAt(0), 0) % 2 === 0 ? 'var(--male)' : 'var(--female)';
+    return `<div class="rank-card ${i < 3 ? 'top3' : ''}">
+      <div class="pos ${i < 3 ? 'medal' : ''}">${medals[i] || '#' + (i + 1)}</div>
+      <div class="avatar" style="background:${hue}">${escapeHtml(initial)}</div>
+      <div class="name">${escapeHtml(name)}</div>
+      <div class="pts">${escapeHtml(String(pts))}</div>
     </div>`;
-
-  app.innerHTML = html;
-
-  // Restore focus sur search
-  const inp = document.getElementById('searchInput');
-  if (inp && searchQuery) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  }).join('');
+  footerEl.style.display = 'block';
 }
 
-function setGroup(id) { currentGroup = id; render(); }
-function setSearch(v) { searchQuery = v; render(); }
-window.setGroup = setGroup;
-window.setSearch = setSearch;
+render();
 </script>
 </body>
 </html>
