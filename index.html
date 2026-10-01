@@ -21,13 +21,22 @@
       --safe-right: env(safe-area-inset-right, 0px);
     }
 
-    html { height: -webkit-fill-available; }
+    html { height: 100%; height: -webkit-fill-available; }
 
+    /* Mise en page en colonne flex (header / main / nav) plutôt qu'un body qui
+       défile avec une barre de nav en "position: fixed" par-dessus : sur iOS,
+       un élément fixed se désynchronise du bas de l'écran dès que le clavier
+       s'affiche/se masque (saisie d'un nom, d'un score, de la recherche...) —
+       il peut alors flotter au milieu de l'écran ou rester mal placé jusqu'à
+       un scroll manuel. Ici, seul <main> défile ; la nav, dans le flux normal
+       en bas de la colonne, ne peut plus se décoller.
+    */
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; background: var(--bg); color: var(--text);
       max-width: 480px; margin: 0 auto;
-      min-height: 100vh; min-height: -webkit-fill-available;
-      padding-bottom: calc(70px + var(--safe-bottom));
+      height: 100vh; height: -webkit-fill-available; height: 100dvh;
+      display: flex; flex-direction: column;
+      overflow: hidden;
       -webkit-font-smoothing: antialiased;
       overscroll-behavior-y: none;
     }
@@ -53,10 +62,11 @@
     .sync-dot.syncing { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: blink 0.8s infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-    /* NAV — collée au bas avec safe area */
+    /* NAV — dans le flux normal en bas de la colonne flex (voir body), avec
+       la safe area iOS gérée via le padding plutôt que via un positionnement
+       fixed qui pourrait se désynchroniser du bas réel de l'écran. */
     nav {
-      position: fixed; bottom: 0; left: 0; right: 0;
-      max-width: 480px; margin: 0 auto;
+      flex-shrink: 0;
       background: rgba(10,15,30,0.98);
       backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
       border-top: 1px solid var(--border);
@@ -75,8 +85,12 @@
     .nav-icon { font-size: 22px; line-height: 1; }
     .nav-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
 
-    /* MAIN */
-    main { padding: 14px 14px; position: relative; z-index: 1; }
+    /* MAIN — seule zone qui défile (voir body) */
+    main {
+      flex: 1 1 auto; min-height: 0;
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+      padding: 14px 14px; position: relative; z-index: 1;
+    }
     .tab { display: none; flex-direction: column; gap: 12px; }
 
     /* TYPOGRAPHY */
@@ -168,7 +182,8 @@
 
     /* PLAYERS */
     .player-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-      padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: 64px; }
+      padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: 64px; flex-wrap: wrap; }
+    .player-group-select { flex-basis: 100%; margin-top: 2px; }
 
     /* PLAYER GRID — 4 colonnes × 5 lignes = 20 joueurs visibles */
     .player-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
@@ -1322,8 +1337,8 @@ function submitMatch() {
     matchP1Id=''; matchP2Id='';
     renderSets(); updateMatchPreview();
     updateBanner(); updateMatchFormVisibility();
-    // 2. Remonter en haut de la page après validation
-    window.scrollTo({top: 0, behavior: 'smooth'});
+    // 2. Remonter en haut de la page après validation (c'est <main> qui défile, pas window)
+    document.querySelector('main')?.scrollTo({top: 0, behavior: 'smooth'});
     const btn=document.getElementById('submitMatchBtn');
     btn.textContent='✓ Match enregistré !'; btn.style.background='var(--green)';
     setTimeout(()=>{btn.textContent='Valider le match';btn.style.background='';},2500);
@@ -1450,6 +1465,7 @@ function renderPlayerList() {
   const sec = document.getElementById('playerListSection');
   const search = document.getElementById('playerSearch')?.value||'';
   const pArr = sortedPlayers().filter(p=>fullName(p).toLowerCase().includes(search.toLowerCase()));
+  const gArr = objArr(groups);
 
   sec.innerHTML = `
     <div class="card">
@@ -1492,20 +1508,35 @@ function renderPlayerList() {
           <div style="font-size:17px;font-weight:700;color:var(--accent);margin-right:4px">${p.elo}</div>
           <button class="btn-icon" onclick="startEdit('${p.id}','${p.gender}')">✏️</button>
           <button class="btn-icon" onclick="confirmDeletePlayer('${p.id}')">🗑️</button>
+          ${playerGroupSelect(p, gArr, grp?.id || '')}
         </div>`;
     }).join('')}`;
   sec.style.display='flex'; sec.style.flexDirection='column'; sec.style.gap='10px';
   setNewGender(newPlayerGender);
 }
 
+// Onglet Joueurs → Groupes : vue "trombinoscope par groupe". L'affectation et
+// le changement de groupe d'un joueur se font via le menu déroulant affiché
+// sur chaque ligne (le même que dans l'onglet Joueurs ▸ Liste) — il suffit de
+// choisir le nouveau groupe, plus besoin d'aller décocher le joueur dans son
+// ancien groupe avant de pouvoir le cocher dans le nouveau. Un changement ne
+// touche jamais les points/stats du joueur (voir setPlayerGroup).
 function renderPlayerGroups() {
   const sec = document.getElementById('playerGroupsSection');
   const gArr = objArr(groups);
-  const pArr = objArr(players);
+  const pArr = sortedPlayers();
 
-  // Mapping joueur → groupe actuel
-  const playerGroupMap = {};
-  gArr.forEach(g => (g.playerIds||[]).forEach(pid => playerGroupMap[pid] = g.id));
+  const playerRow = (p, currentGroupId) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+      <div class="avatar" style="width:30px;height:30px;font-size:12px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
+        ${avatarInitial(p)}
+      </div>
+      <span style="font-size:14px;font-weight:600;flex:1;min-width:0">${fullName(p)}</span>
+      <span style="font-size:12px;color:var(--accent)">${p.elo}</span>
+      <div style="flex-basis:100%">${playerGroupSelect(p, gArr, currentGroupId)}</div>
+    </div>`;
+
+  const ungrouped = pArr.filter(p => !getPlayerGroup(p.id));
 
   sec.innerHTML = `
     <div class="card">
@@ -1514,35 +1545,27 @@ function renderPlayerGroups() {
     </div>
     ${gArr.length===0?'<div class="empty">Aucun groupe créé</div>':''}
     ${gArr.map(g=>{
-      const inGroup = pArr.filter(p => (g.playerIds||[]).includes(p.id));
-      const notInAnyGroup = pArr.filter(p => !playerGroupMap[p.id]);
-      // Joueurs disponibles = dans ce groupe + sans groupe
-      const available = pArr.filter(p => (g.playerIds||[]).includes(p.id) || !playerGroupMap[p.id]);
+      const members = pArr.filter(p => (g.playerIds||[]).includes(p.id));
       return `
       <div class="card">
         <div class="row">
-          <span style="font-weight:700">${g.name} <span style="font-size:11px;color:var(--muted)">(${(g.playerIds||[]).length} joueur${(g.playerIds||[]).length>1?'s':''})</span></span>
+          <span style="font-weight:700">${escapeHtml(g.name)} <span style="font-size:11px;color:var(--muted)">(${members.length} joueur${members.length>1?'s':''})</span></span>
           <div style="display:flex;gap:6px;align-items:center">
             <button class="btn-link" style="font-size:11px;padding:5px 10px" onclick="selectAllGroup('${g.id}')">✅ Tous libres</button>
             <button class="btn-link" style="font-size:11px;padding:5px 10px;border-color:var(--muted);color:var(--muted)" onclick="deselectAllGroup('${g.id}')">☐ Vider</button>
             <button class="btn-icon" onclick="confirmDeleteGroup('${g.id}','${g.name}')">🗑️</button>
           </div>
         </div>
-        ${available.length === 0 ? '<div style="font-size:12px;color:var(--muted);padding:4px 0">Tous les joueurs sont déjà dans un groupe</div>' : ''}
-        ${available.map(p=>{
-          const inG=(g.playerIds||[]).includes(p.id);
-          return `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 0;border-bottom:1px solid var(--border)">
-            <input type="checkbox" ${inG?'checked':''} onchange="toggleGroupExclusive('${p.id}','${g.id}',this.checked)"
-              style="accent-color:var(--accent);width:18px;height:18px;flex-shrink:0"/>
-            <div class="avatar" style="width:30px;height:30px;font-size:12px;background:${p.gender==='F'?'var(--female)':'var(--male)'}">
-              ${avatarInitial(p)}
-            </div>
-            <span style="font-size:14px;font-weight:${inG?'600':'400'};color:${inG?'var(--text)':'var(--muted)'};flex:1">${fullName(p)}</span>
-            <span style="font-size:12px;color:var(--accent)">${p.elo}</span>
-          </label>`;
-        }).join('')}
+        ${members.length === 0 ? '<div style="font-size:12px;color:var(--muted);padding:4px 0">Aucun joueur pour l\'instant — choisissez-le ci-dessous ou dans l\'onglet Joueurs</div>' : ''}
+        ${members.map(p => playerRow(p, g.id)).join('')}
       </div>`;
-    }).join('')}`;
+    }).join('')}
+    ${gArr.length>0 ? `
+    <div class="card">
+      <div class="row"><span style="font-weight:700">Sans groupe <span style="font-size:11px;color:var(--muted)">(${ungrouped.length} joueur${ungrouped.length>1?'s':''})</span></span></div>
+      ${ungrouped.length === 0 ? '<div style="font-size:12px;color:var(--muted);padding:4px 0">Tous les joueurs sont dans un groupe</div>' : ''}
+      ${ungrouped.map(p => playerRow(p, '')).join('')}
+    </div>` : ''}`;
   sec.style.display='flex'; sec.style.flexDirection='column'; sec.style.gap='10px';
 }
 
@@ -1640,23 +1663,36 @@ function deselectAllGroup(groupId) {
 }
 window.deselectAllGroup = deselectAllGroup;
 
-// Exclusif : un joueur ne peut être que dans un seul groupe
-function toggleGroupExclusive(playerId, groupId, checked) {
+// Affecter/changer/retirer un joueur d'un groupe en une seule action (menu
+// déroulant). Un joueur n'appartient jamais qu'à un seul groupe à la fois :
+// on l'ajoute au groupe choisi (groupId === '' => aucun groupe) et on le
+// retire automatiquement de tout autre groupe où il se trouvait. Ceci ne
+// touche jamais players[id] (elo, victoires/défaites, matchs joués) — ses
+// points sont donc toujours conservés tels quels lors d'un changement de groupe.
+function setPlayerGroup(playerId, groupId) {
+  setSyncing(true);
   run(async () => {
-    const gArr = objArr(groups);
-    for (const g of gArr) {
+    for (const g of objArr(groups)) {
       const ids = g.playerIds || [];
+      const has = ids.includes(playerId);
       if (g.id === groupId) {
-        const newIds = checked ? [...new Set([...ids, playerId])] : ids.filter(x => x !== playerId);
-        await fbUpdate(`groups/${g.id}`, {playerIds: newIds});
-      } else if (checked && ids.includes(playerId)) {
-        // Retirer du groupe précédent
+        if (!has) await fbUpdate(`groups/${g.id}`, {playerIds: [...ids, playerId]});
+      } else if (has) {
         await fbUpdate(`groups/${g.id}`, {playerIds: ids.filter(x => x !== playerId)});
       }
     }
-  });
+  }, groupId ? 'Groupe mis à jour' : 'Retiré du groupe');
 }
-window.toggleGroupExclusive = toggleGroupExclusive;
+window.setPlayerGroup = setPlayerGroup;
+
+// Markup du menu déroulant de groupe pour un joueur, réutilisé dans l'onglet
+// Joueurs et dans l'onglet Groupes.
+function playerGroupSelect(p, gArr, currentGroupId) {
+  return `<select class="mini-select player-group-select" onchange="setPlayerGroup('${p.id}', this.value)">
+    <option value="">Sans groupe</option>
+    ${gArr.map(g => `<option value="${g.id}" ${currentGroupId===g.id?'selected':''}>${escapeHtml(g.name)}</option>`).join('')}
+  </select>`;
+}
 
 // ── RANKING TAB ───────────────────────────────────────────────────────────────
 // Pas de sélecteur de groupe ici : afficher/partager un autre groupe se fait
