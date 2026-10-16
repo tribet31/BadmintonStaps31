@@ -307,6 +307,37 @@
     .pin-btn:active { background: rgba(245,158,11,0.15); border-color: var(--accent); transform: scale(.94); }
     .pin-btn.del { font-size: 20px; color: var(--muted); }
     .pin-btn.zero { grid-column: 2; }
+    /* PARTAGE EN DIRECT */
+    .cloud-form { display:flex; flex-direction:column; gap:8px; text-align:left; max-height:62vh; overflow-y:auto; }
+    .cloud-form label { font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin-top:4px; }
+    .cloud-form input { font-size:16px; }
+    .cloud-status { font-size:12px; border-radius:10px; padding:8px 10px; text-align:left; }
+    .cloud-status.ok { background:rgba(16,185,129,.1); color:var(--green); }
+    .cloud-status.warn { background:rgba(245,158,11,.1); color:var(--accent); }
+    .cloud-status.err { background:rgba(239,68,68,.1); color:var(--red); }
+    .uid-box { font-family:ui-monospace,Menlo,monospace; font-size:12px; background:#0a0f1e; border:1px solid var(--border);
+      border-radius:8px; padding:8px; word-break:break-all; user-select:all; -webkit-user-select:all; }
+
+    /* PAGE D'IMPRESSION DES QR (un par groupe) */
+    #printSheet { position:fixed; inset:0; z-index:400; background:#fff; color:#111; overflow-y:auto; display:none;
+      padding:calc(16px + var(--safe-top)) 16px calc(16px + var(--safe-bottom)); }
+    #printSheet.open { display:block; }
+    #printSheet .ps-bar { display:flex; gap:8px; justify-content:center; margin-bottom:16px; }
+    #printSheet .ps-bar button { border-radius:10px; padding:10px 16px; font-size:15px; font-weight:700; border:1px solid #ccc; background:#f4f4f5; color:#111; font-family:inherit; }
+    #printSheet .ps-bar .primary { background:#f59e0b; border-color:#f59e0b; color:#000; }
+    #printSheet .ps-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; }
+    #printSheet .ps-card { border:2px dashed #bbb; border-radius:12px; padding:14px; text-align:center; break-inside:avoid; page-break-inside:avoid; }
+    #printSheet .ps-card h3 { font-size:20px; margin-bottom:4px; }
+    #printSheet .ps-card .ps-sub { font-size:12px; color:#555; margin-bottom:8px; }
+    #printSheet .ps-card svg { width:200px; height:200px; }
+    #printSheet .ps-card .ps-url { font-size:8px; color:#888; word-break:break-all; margin-top:6px; }
+    @media print {
+      body { height:auto !important; overflow:visible !important; display:block !important; background:#fff !important; }
+      body > *:not(#printSheet) { display:none !important; }
+      #printSheet { position:static; display:block !important; padding:0; overflow:visible; }
+      #printSheet .ps-bar { display:none; }
+      #printSheet .ps-grid { grid-template-columns:repeat(2,1fr); }
+    }
   </style>
 
 </head>
@@ -453,6 +484,7 @@
         <button class="btn-export" style="border-color:rgba(139,92,246,0.4);color:#8b5cf6;background:rgba(139,92,246,0.08)" onclick="exportDataFile()">📄 .txt</button>
         <button class="btn-export" style="border-color:rgba(16,185,129,0.4);color:var(--green);background:rgba(16,185,129,0.08)" onclick="downloadBackup()">💾 JSON</button>
         <button class="btn-export" style="border-color:rgba(59,130,246,0.4);color:var(--male);background:rgba(59,130,246,0.08)" onclick="restoreFromBackup()">♻️ Restaurer</button>
+        <button class="btn-export" id="cloudBtn" style="border-color:rgba(245,158,11,0.4);color:var(--accent);background:rgba(245,158,11,0.08)" onclick="openCloudSettings()">☁️ En direct</button>
       </div>
     </div>
     <div class="filter-bar" id="rankingFilters"></div>
@@ -486,6 +518,7 @@
 
 <div class="toast hidden" id="toast"></div>
 <div class="modal hidden" id="modal"><div class="modal-box" id="modalBox"></div></div>
+<div id="printSheet"></div>
 
 <!-- Générateur de QR code 100% local (aucun réseau, aucune ressource externe).
      Bundle autonome dérivé de la bibliothèque open-source "qrcode" (Ryan Day, licence MIT,
@@ -622,6 +655,8 @@ async function loadAll() {
     sessionsHistory = _data.sessions || {};
     const needsSave = migrateLegacyNames() | normalizeGenders() | repairCorruptedElo();
     if (needsSave) await saveAll();
+    updateCloudIndicators();
+    schedulePublish(500); // rattrape un envoi resté en attente lors de la dernière utilisation
     document.getElementById('loadingScreen').style.display = 'none';
     return true;
   } catch(e) {
@@ -648,6 +683,8 @@ async function saveAll() {
   if (NativeBridge.available()) {
     await NativeBridge.write(text);
   }
+  // Partage en direct : publie (en différé, sans bloquer) le classement de chaque groupe.
+  schedulePublish();
 }
 
 // Génère un ID unique simple
@@ -1834,10 +1871,16 @@ function getClassementBaseUrl() {
 //      [i, j, victoires de i contre j, défaites de i contre j, solde pts de i, solde pts de j]
 //      (i, j = positions dans p). Omis si withHistory = false (lien trop long).
 function buildClassementPayload(list, groupName, withHistory = true) {
+  return JSON.stringify(buildClassementData(list, groupName, withHistory, fullName));
+}
+
+// Même contenu, sous forme d'objet. nameFn permet de choisir l'affichage des noms
+// (nom complet pour le QR "photo" ; "Prénom N." pour la version publiée en ligne).
+function buildClassementData(list, groupName, withHistory = true, nameFn = fullName) {
   const data = {
     g: groupName || null,
     t: new Date().toISOString(),
-    p: list.map(p => [fullName(p), p.elo, p.gender === 'F' ? 'F' : 'M', p.wins || 0, p.losses || 0])
+    p: list.map(p => [nameFn(p), p.elo, p.gender === 'F' ? 'F' : 'M', p.wins || 0, p.losses || 0])
   };
   if (withHistory) {
     const idx = {};
@@ -1854,7 +1897,7 @@ function buildClassementPayload(list, groupName, withHistory = true) {
     });
     data.h = Object.values(pairs);
   }
-  return JSON.stringify(data);
+  return data;
 }
 
 // Au-delà de cette longueur, le QR (196 px à l'écran) devient trop dense pour être
@@ -1889,6 +1932,28 @@ async function renderRankingQr(list, groupName) {
     box.innerHTML = `<div class="empty">Ajoutez des joueurs pour générer le QR du classement</div>`;
     return;
   }
+  // Partage en direct actif + groupe actif : QR permanent (lien fixe vers le groupe),
+  // le même que celui de la page d'impression. Pas de données dans le lien.
+  const liveGroup = activeGroupId && groups[activeGroupId] ? activeGroupId : null;
+  const liveUrl = liveGroup ? liveGroupUrl(liveGroup) : null;
+  if (liveUrl) {
+    renderRankingQr._token = (renderRankingQr._token || 0) + 1;
+    let liveSvg = null;
+    try { liveSvg = window.QR.toSVG(liveUrl, { errorCorrectionLevel:'Q', darkHex:'#0a0f1e', lightHex:'#ffffff', margin:2, width:196 }); } catch (e) {}
+    if (liveSvg) {
+      box.innerHTML = `
+        <div style="font-weight:700;font-size:15px">📱 ${escapeHtml(groupName || 'Classement')}</div>
+        <div style="font-size:12px;color:var(--muted);text-align:center">QR permanent — le classement se met à jour en direct</div>
+        <div style="width:196px;height:196px;background:#fff;border-radius:10px;border:3px solid var(--green);display:flex;align-items:center;justify-content:center;overflow:hidden">${liveSvg}</div>
+        <div id="qrCloudStatus" style="width:100%">${cloudStatusHtml()}</div>
+        <button class="btn-share" onclick="openPrintSheet()">🖨️ Imprimer les QR des groupes</button>
+        <button class="btn-share" onclick="shareRankingText()">📤 Partager le classement (texte)</button>
+        <button class="btn-share" style="background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.3);color:var(--male)" onclick="changeGroup()">🔄 Changer de groupe</button>`;
+      window.__currentRankingPlainText = buildClassementText(list, groupName);
+      return;
+    }
+  }
+
   const baseUrl = getClassementBaseUrl();
   const token = (renderRankingQr._token = (renderRankingQr._token || 0) + 1);
   const qrOpts = { errorCorrectionLevel:'M', darkHex:'#0a0f1e', lightHex:'#ffffff', margin:2, width:196 };
@@ -1934,6 +1999,305 @@ async function renderRankingQr(list, groupName) {
     <button class="btn-share" style="background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.3);color:var(--male)" onclick="changeGroup()">🔄 Changer de groupe</button>`;
   window.__currentRankingPlainText = plainText;
 }
+
+// ── PARTAGE EN DIRECT (Firebase Realtime Database) ──────────────────────────
+// Facultatif. Les données restent stockées sur l'appareil (source de vérité) ;
+// quand le partage est configuré, l'app PUBLIE en plus, après chaque sauvegarde,
+// une version publique et réduite du classement de chaque groupe :
+//   public/groups/<id du groupe> = { g, t, p:[["Prénom N.", pts, 'F'|'M', V, D]], h:[face-à-face] }
+// classement.html lit ce nœud et se met à jour tout seul : un QR imprimé par
+// groupe (lien fixe ?s=<base>&g=<groupe>) reste donc valable toute l'année.
+//
+// Aucun SDK ni script externe : uniquement des appels REST (fetch).
+// Sécurité : rien n'est écrit en dur dans le code. L'enseignant saisit une fois
+// l'adresse de la base, la clé d'API Web (publique par conception chez Firebase)
+// et son e-mail/mot de passe Firebase. Le mot de passe n'est JAMAIS conservé :
+// seul un jeton de renouvellement l'est, dans le stockage local de l'appareil.
+// L'écriture est réservée à ce compte par les règles de la base (voir le guide).
+const CLOUD_KEY = 'badmintonrank_cloud_v1';
+let cloud = loadCloudCfg();
+let publishTimer = null, publishInFlight = false, publishAgain = false, lastPublishedJson = null;
+
+function loadCloudCfg() {
+  try { return JSON.parse(localStorage.getItem(CLOUD_KEY) || 'null'); } catch (e) { return null; }
+}
+function saveCloudCfg() {
+  try {
+    if (cloud) localStorage.setItem(CLOUD_KEY, JSON.stringify(cloud));
+    else localStorage.removeItem(CLOUD_KEY);
+  } catch (e) { console.warn('Réglages du partage non enregistrés', e); }
+}
+function cloudReady() { return !!(cloud && cloud.dbHost && cloud.apiKey && cloud.refreshToken); }
+
+// Accepte l'adresse telle que copiée depuis la console Firebase
+// ("https://xxx-default-rtdb.europe-west1.firebasedatabase.app/") et n'en garde
+// que le nom d'hôte. Refuse tout ce qui n'est pas une base Firebase.
+function normalizeDbHost(input) {
+  let h = String(input || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)*\.(firebasedatabase\.app|firebaseio\.com)$/.test(h) ? h : null;
+}
+
+async function cloudSignIn(apiKey, email, password) {
+  const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=' + encodeURIComponent(apiKey), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, returnSecureToken: true })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(firebaseAuthMessage(j?.error?.message));
+  return { uid: j.localId, idToken: j.idToken, refreshToken: j.refreshToken, idTokenExp: Date.now() + (Number(j.expiresIn) || 3600) * 1000 };
+}
+
+function firebaseAuthMessage(code) {
+  code = String(code || '');
+  if (/INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND/.test(code)) return 'E-mail ou mot de passe incorrect';
+  if (/API_KEY_INVALID|API key not valid/i.test(code)) return 'Clé d\'API Web invalide';
+  if (/OPERATION_NOT_ALLOWED|PASSWORD_LOGIN_DISABLED/.test(code)) return 'Connexion par e-mail non activée dans Firebase (Authentication ▸ Méthode de connexion)';
+  if (/TOO_MANY_ATTEMPTS/.test(code)) return 'Trop de tentatives, réessayez dans quelques minutes';
+  if (/USER_DISABLED/.test(code)) return 'Ce compte Firebase est désactivé';
+  return code ? 'Connexion refusée (' + code + ')' : 'Connexion impossible (réseau ?)';
+}
+
+// Jeton d'accès valable 1 h, renouvelé automatiquement grâce au jeton de renouvellement.
+async function cloudIdToken() {
+  if (cloud.idToken && cloud.idTokenExp && Date.now() < cloud.idTokenExp - 60000) return cloud.idToken;
+  const r = await fetch('https://securetoken.googleapis.com/v1/token?key=' + encodeURIComponent(cloud.apiKey), {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(cloud.refreshToken)
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const e = new Error('Session Firebase expirée : reconnectez-vous dans ☁️ En direct');
+    e.authLost = true; throw e;
+  }
+  cloud.idToken = j.id_token; cloud.refreshToken = j.refresh_token || cloud.refreshToken;
+  cloud.idTokenExp = Date.now() + (Number(j.expires_in) || 3600) * 1000;
+  saveCloudCfg();
+  return cloud.idToken;
+}
+
+// Version publique de tous les groupes. Noms réduits à "Prénom N." :
+// la page est lisible par toute personne qui a le lien (les élèves).
+function buildPublicGroups() {
+  const out = {};
+  objArr(groups).forEach(g => {
+    if (!g.id || !/^[A-Za-z0-9_-]+$/.test(g.id)) return;
+    const ids = g.playerIds || [];
+    const list = sortedPlayers().filter(p => ids.includes(p.id));
+    out[g.id] = buildClassementData(list, g.name, true, shortDisplay);
+  });
+  return out;
+}
+
+// Comparaison sans l'horodatage, pour ne republier que si le classement a changé.
+function publicFingerprint(pub) {
+  return JSON.stringify(pub, (k, v) => k === 't' ? undefined : v);
+}
+
+function schedulePublish(delay = 1500) {
+  if (!cloudReady()) return;
+  clearTimeout(publishTimer);
+  publishTimer = setTimeout(() => publishNow().catch(() => {}), delay);
+}
+
+async function publishNow(force = false) {
+  if (!cloudReady()) return false;
+  if (publishInFlight) { publishAgain = true; return false; }
+  const pub = buildPublicGroups();
+  const fp = publicFingerprint(pub);
+  if (!force && fp === lastPublishedJson && !cloud.pending) return true;
+  publishInFlight = true;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) throw Object.assign(new Error('Pas de réseau'), { offline: true });
+    const token = await cloudIdToken();
+    // Un seul PUT pour tous les groupes : un groupe supprimé dans l'app disparaît aussi en ligne.
+    const r = await fetch(`https://${cloud.dbHost}/public/groups.json?auth=${encodeURIComponent(token)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pub)
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      const msg = r.status === 401 || /permission/i.test(j?.error || '')
+        ? 'Écriture refusée par Firebase : vérifiez les règles de la base (UID ci-dessous)'
+        : r.status === 404 ? 'Base introuvable : vérifiez l\'adresse de la base'
+        : 'Erreur Firebase ' + r.status + (j?.error ? ' (' + j.error + ')' : '');
+      throw new Error(msg);
+    }
+    lastPublishedJson = fp;
+    cloud.pending = false; cloud.lastError = null; cloud.lastSync = new Date().toISOString();
+    saveCloudCfg(); updateCloudIndicators();
+    return true;
+  } catch (e) {
+    const wasOk = !cloud.pending && !cloud.lastError;
+    cloud.pending = true;
+    cloud.lastError = e.offline || e instanceof TypeError ? 'En attente de réseau — envoi automatique dès le retour de la connexion' : e.message;
+    saveCloudCfg(); updateCloudIndicators();
+    if (wasOk && !(e.offline || e instanceof TypeError)) showToast('☁️ ' + e.message, 'err');
+    return false;
+  } finally {
+    publishInFlight = false;
+    if (publishAgain) { publishAgain = false; schedulePublish(300); }
+  }
+}
+
+// Reprise automatique : au retour du réseau, au retour dans l'app, et toutes les minutes si un envoi est en attente.
+window.addEventListener('online', () => { if (cloudReady() && cloud.pending) publishNow(true); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && cloudReady() && cloud.pending) publishNow(true);
+});
+setInterval(() => { if (cloudReady() && cloud.pending) publishNow(true); }, 60000);
+
+function cloudStatusHtml() {
+  if (!cloudReady()) return `<div class="cloud-status warn">Non configuré — le QR affiché reste une « photo » du classement.</div>`;
+  if (cloud.lastError) return `<div class="cloud-status ${cloud.pending && /réseau/.test(cloud.lastError) ? 'warn' : 'err'}">⚠️ ${escapeHtml(cloud.lastError)}</div>`;
+  if (cloud.lastSync) {
+    const d = new Date(cloud.lastSync);
+    return `<div class="cloud-status ok">🟢 Classements en ligne à jour (dernier envoi ${d.toLocaleDateString('fr-FR')} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})</div>`;
+  }
+  return `<div class="cloud-status warn">Connecté, premier envoi en cours…</div>`;
+}
+
+function updateCloudIndicators() {
+  const btn = document.getElementById('cloudBtn');
+  if (btn) btn.textContent = !cloudReady() ? '☁️ En direct' : cloud.lastError ? '☁️ ⚠️' : '☁️ ✓';
+  const st = document.getElementById('cloudStatusSlot');
+  if (st) st.innerHTML = cloudStatusHtml();
+  const qs = document.getElementById('qrCloudStatus');
+  if (qs) qs.innerHTML = cloudStatusHtml();
+}
+
+// URL de la page classement à mettre dans les QR permanents. Par défaut, celle
+// qui est à côté de cette page ; modifiable (indispensable dans la coquille native).
+function cloudPageUrl() {
+  return (cloud && cloud.pageUrl) || getClassementBaseUrl() || '';
+}
+// https obligatoire (les téléphones des élèves), sauf test en local.
+function validPageUrl(u) {
+  return /^https:\/\/[^\s]+$/i.test(u) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/[^\s]*$/i.test(u);
+}
+function liveGroupUrl(groupId) {
+  const base = cloudPageUrl();
+  if (!base || !cloudReady()) return null;
+  return `${base}?s=${encodeURIComponent(cloud.dbHost)}&g=${encodeURIComponent(groupId)}`;
+}
+
+function openCloudSettings() {
+  const c = cloud || {};
+  const connected = cloudReady();
+  showModal(`
+    <div style="font-weight:800;font-size:17px;margin-bottom:6px">☁️ Classement en direct</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Publie après chaque match le classement de chaque groupe, pour des QR à imprimer une fois pour toutes.</div>
+    <div class="cloud-form">
+      <div id="cloudStatusSlot">${cloudStatusHtml()}</div>
+      ${connected ? `
+        <label>Compte connecté</label><div style="font-size:14px">${escapeHtml(c.email || '')}</div>
+        <label>UID du compte (à coller dans les règles Firebase)</label><div class="uid-box">${escapeHtml(c.uid || '')}</div>
+        <label>Base</label><div style="font-size:12px;word-break:break-all">${escapeHtml(c.dbHost || '')}</div>
+        <label>Page classement des QR</label>
+        <input type="text" id="cloudPageUrl" value="${escapeHtml(cloudPageUrl())}" placeholder="https://…/classement.html" autocapitalize="off" autocorrect="off"/>
+        <button class="btn-primary" onclick="cloudPublishFromSettings()">⬆️ Publier maintenant</button>
+        <button class="btn-secondary" onclick="openPrintSheet()">🖨️ Imprimer les QR des groupes</button>
+        <button class="btn-secondary" style="color:var(--red)" onclick="cloudDisconnect()">Se déconnecter</button>
+      ` : `
+        <label>Adresse de la base (Realtime Database)</label>
+        <input type="text" id="cloudDb" value="${escapeHtml(c.dbHost ? 'https://' + c.dbHost : '')}" placeholder="https://…-default-rtdb.europe-west1.firebasedatabase.app" autocapitalize="off" autocorrect="off"/>
+        <label>Clé d'API Web</label>
+        <input type="text" id="cloudApiKey" value="${escapeHtml(c.apiKey || '')}" placeholder="AIza…" autocapitalize="off" autocorrect="off"/>
+        <label>E-mail du compte Firebase</label>
+        <input type="email" id="cloudEmail" value="${escapeHtml(c.email || '')}" autocapitalize="off" autocorrect="off" style="background:#0a0f1e;border:1px solid var(--border);border-radius:10px;padding:11px 13px;color:var(--text);width:100%;font-family:inherit"/>
+        <label>Mot de passe (non conservé)</label>
+        <input type="password" id="cloudPassword" style="background:#0a0f1e;border:1px solid var(--border);border-radius:10px;padding:11px 13px;color:var(--text);font-size:16px;width:100%;font-family:inherit"/>
+        <label>Page classement des QR</label>
+        <input type="text" id="cloudPageUrl" value="${escapeHtml(cloudPageUrl())}" placeholder="https://…/classement.html" autocapitalize="off" autocorrect="off"/>
+        <button class="btn-primary" id="cloudConnectBtn" onclick="cloudConnectFromSettings()">Se connecter</button>
+      `}
+      <button class="btn-secondary" onclick="closeModal()">Fermer</button>
+    </div>`, null);
+}
+
+async function cloudConnectFromSettings() {
+  const dbHost = normalizeDbHost(document.getElementById('cloudDb').value);
+  const apiKey = document.getElementById('cloudApiKey').value.trim();
+  const email = document.getElementById('cloudEmail').value.trim();
+  const password = document.getElementById('cloudPassword').value;
+  const pageUrl = document.getElementById('cloudPageUrl').value.trim();
+  const slot = document.getElementById('cloudStatusSlot');
+  const fail = msg => { slot.innerHTML = `<div class="cloud-status err">⚠️ ${escapeHtml(msg)}</div>`; };
+  if (!dbHost) return fail('Adresse de la base non reconnue (elle se termine par firebasedatabase.app)');
+  if (!apiKey) return fail('Clé d\'API Web manquante');
+  if (!email || !password) return fail('E-mail et mot de passe requis');
+  if (pageUrl && !validPageUrl(pageUrl)) return fail('L\'adresse de la page classement doit commencer par https://');
+  const btn = document.getElementById('cloudConnectBtn');
+  btn.disabled = true; btn.textContent = 'Connexion…';
+  try {
+    const auth = await cloudSignIn(apiKey, email, password);
+    cloud = { dbHost, apiKey, email, pageUrl: pageUrl || null, ...auth, pending: true, lastError: null, lastSync: null };
+    saveCloudCfg();
+    lastPublishedJson = null;
+    await publishNow(true);
+    openCloudSettings(); // réaffiche l'écran en mode « connecté » avec l'état du premier envoi et l'UID
+    updateCloudIndicators();
+    if (currentTab === 'Ranking') renderRanking();
+  } catch (e) {
+    fail(e.message);
+    btn.disabled = false; btn.textContent = 'Se connecter';
+  }
+}
+
+async function cloudPublishFromSettings() {
+  const pageUrl = document.getElementById('cloudPageUrl')?.value.trim();
+  if (pageUrl && !validPageUrl(pageUrl)) { showToast('Adresse de page invalide (https://…)', 'err'); return; }
+  cloud.pageUrl = pageUrl || null; saveCloudCfg();
+  const ok = await publishNow(true);
+  updateCloudIndicators();
+  if (ok) showToast('Classements publiés');
+  if (currentTab === 'Ranking') renderRanking();
+}
+
+function cloudDisconnect() {
+  showModal(`
+    <div style="font-weight:800;font-size:17px;margin-bottom:8px">Se déconnecter ?</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Les classements déjà en ligne restent visibles mais ne seront plus mis à jour. Vos données sur l'appareil ne sont pas touchées.</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-secondary" style="flex:1" onclick="openCloudSettings()">Annuler</button>
+      <button class="btn-primary" style="flex:1;background:var(--red)" onclick="doConfirm()">Déconnecter</button>
+    </div>`, () => {
+      const keep = cloud ? { dbHost: cloud.dbHost, apiKey: cloud.apiKey, email: cloud.email, pageUrl: cloud.pageUrl } : null;
+      cloud = keep; saveCloudCfg(); lastPublishedJson = null;
+      updateCloudIndicators();
+      if (currentTab === 'Ranking') renderRanking();
+      showToast('Partage en direct désactivé');
+    });
+}
+
+// Page imprimable : un QR permanent par groupe.
+function openPrintSheet() {
+  if (!cloudReady()) { showToast('Configurez d\'abord ☁️ En direct', 'err'); return; }
+  if (!cloudPageUrl()) { showToast('Indiquez l\'adresse de la page classement', 'err'); return; }
+  const gArr = objArr(groups).filter(g => /^[A-Za-z0-9_-]+$/.test(g.id || '')).sort((a, b) => a.name.localeCompare(b.name));
+  if (gArr.length === 0) { showToast('Aucun groupe à imprimer', 'err'); return; }
+  closeModal();
+  const cards = gArr.map(g => {
+    const url = liveGroupUrl(g.id);
+    let svg = '';
+    try { svg = window.QR.toSVG(url, { errorCorrectionLevel: 'Q', darkHex: '#000000', lightHex: '#ffffff', margin: 2, width: 200 }); }
+    catch (e) { svg = '<div style="color:#c00">QR impossible</div>'; }
+    return `<div class="ps-card"><h3>🏸 ${escapeHtml(g.name)}</h3><div class="ps-sub">Scannez pour voir le classement en direct</div>${svg}<div class="ps-url">${escapeHtml(url)}</div></div>`;
+  }).join('');
+  const el = document.getElementById('printSheet');
+  el.innerHTML = `
+    <div class="ps-bar"><button class="primary" onclick="window.print()">🖨️ Imprimer</button><button onclick="closePrintSheet()">Fermer</button></div>
+    <div class="ps-grid">${cards}</div>`;
+  el.classList.add('open');
+  // Le classement en ligne doit exister avant qu'un élève ne scanne le QR.
+  publishNow(true);
+}
+function closePrintSheet() { document.getElementById('printSheet').classList.remove('open'); }
+
+window.openCloudSettings = openCloudSettings;
+window.cloudConnectFromSettings = cloudConnectFromSettings;
+window.cloudPublishFromSettings = cloudPublishFromSettings;
+window.cloudDisconnect = cloudDisconnect;
+window.openPrintSheet = openPrintSheet;
+window.closePrintSheet = closePrintSheet;
 
 function shareRankingText() {
   const text = window.__currentRankingPlainText || '';

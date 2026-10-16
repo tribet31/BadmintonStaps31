@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>🏸 Classement</title>
 <!--
-  Page statique et 100% autonome : elle ne contacte AUCUN serveur et ne lit
-  AUCUNE base de données. Le classement entier est encodé dans le paramètre
+  Deux modes :
+  - « en direct » (?s=<base Firebase>&g=<groupe>) : QR permanent imprimé, la page lit
+    le classement publié par l'app dans Firebase et se met à jour toute seule ;
+  - « photo » (?z= ou ?d=) : page statique et autonome, ne contacte AUCUN serveur. Le classement entier est encodé dans le paramètre
   "d" de l'URL (voir index.html, fonction buildClassementPayload) — cette page se
   contente de le décoder et de l'afficher. Elle doit vivre dans le MÊME dossier
   que index.html (même hébergement) pour que le lien généré par le QR code
@@ -81,7 +83,7 @@
 // { g: nom du groupe ou null, t: date ISO,
 //   p: [[nom, points, 'F'|'M', victoires, défaites], ...] déjà triés,
 //   h: [[i, j, victoires de i, défaites de i, solde pts de i, solde pts de j], ...] (facultatif) }
-// Aucun réseau, aucune base de données : tout est dans le lien lui-même.
+// Mode « photo » : aucun réseau, aucune base de données, tout est dans le lien lui-même.
 function b64urlToStr(b64url) {
   let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
   while (b64.length % 4) b64 += '=';
@@ -102,12 +104,96 @@ async function inflateB64url(b64url) {
   return await new Response(stream).text();
 }
 
+// Mode « en direct » : ?s=<base Firebase>&g=<id du groupe> (QR permanent imprimé).
+// La page lit public/groups/<id>.json et se tient à jour toute seule
+// (flux d'événements Firebase, avec repli sur une relecture toutes les 30 s).
+function liveParams(params) {
+  const s = (params.get('s') || '').toLowerCase(), g = params.get('g') || '';
+  if (!s && !g) return null;
+  const hostOk = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.(firebasedatabase\.app|firebaseio\.com)$/.test(s);
+  return hostOk && /^[A-Za-z0-9_-]+$/.test(g) ? { host: s, group: g } : { invalid: true };
+}
+
+let liveState = null;
+
+async function liveFetch() {
+  const { host, group } = liveState;
+  const r = await fetch(`https://${host}/public/groups/${group}.json`, { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return await r.json();
+}
+
+async function liveRefresh() {
+  const listEl = document.getElementById('list');
+  try {
+    const data = await liveFetch();
+    liveState.lastOk = Date.now();
+    if (data === null) {
+      document.getElementById('subtitle').textContent = '';
+      listEl.innerHTML = '<div class="empty">Ce groupe n\'existe plus ou n\'a pas encore été publié par l\'enseignant.</div>';
+      return;
+    }
+    const sig = JSON.stringify(data);
+    if (sig === liveState.lastSig) { setLiveBadge(data); return; }
+    liveState.lastSig = sig;
+    renderData(data, true);
+  } catch (e) {
+    if (!liveState.lastSig) listEl.innerHTML = '<div class="error">Classement indisponible pour le moment (connexion ?). Nouvel essai automatique…</div>';
+    setLiveBadge(null, true);
+  }
+}
+
+let liveRefreshTimer = null;
+function liveRefreshSoon() { clearTimeout(liveRefreshTimer); liveRefreshTimer = setTimeout(liveRefresh, 400); }
+
+function startLive(lp) {
+  liveState = { host: lp.host, group: lp.group, lastSig: null };
+  liveRefresh();
+  openStream();
+  setInterval(() => { if (document.visibilityState === 'visible') liveRefresh(); }, 30000);
+  // Le flux est fermé quand la page passe en arrière-plan : l'offre gratuite de
+  // Firebase limite le nombre de connexions simultanées (100), il ne faut pas
+  // les gaspiller avec des onglets oubliés.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') { liveRefresh(); openStream(); }
+    else closeStream();
+  });
+}
+
+// Flux temps réel : Firebase envoie un événement à chaque modification du nœud.
+function openStream() {
+  if (liveState.es || typeof EventSource !== 'function') return;
+  try {
+    const es = new EventSource(`https://${liveState.host}/public/groups/${liveState.group}.json`);
+    es.addEventListener('put', liveRefreshSoon);
+    es.addEventListener('patch', liveRefreshSoon);
+    liveState.es = es;
+  } catch (e) { /* la relecture toutes les 30 s suffit */ }
+}
+function closeStream() {
+  if (liveState.es) { liveState.es.close(); liveState.es = null; }
+}
+
+function setLiveBadge(data, failed) {
+  const sub = document.getElementById('subtitle');
+  const d = data && data.t ? new Date(data.t) : (liveState.lastT || null);
+  if (data && data.t) liveState.lastT = d;
+  const when = d && !isNaN(d) ? ' · mis à jour le ' + d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+    + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+  sub.textContent = (failed ? '🟠 Connexion perdue, nouvel essai…' : '🟢 En direct') + when;
+}
+
 async function render() {
   const params = new URLSearchParams(location.search);
-  const raw = params.get('d'), zraw = params.get('z');
   const listEl = document.getElementById('list');
-  const footerEl = document.getElementById('footer');
+  const lp = liveParams(params);
+  if (lp && lp.invalid) {
+    listEl.innerHTML = '<div class="error">Lien invalide ou corrompu.</div>';
+    return;
+  }
+  if (lp) { startLive(lp); return; }
 
+  const raw = params.get('d'), zraw = params.get('z');
   if (!raw && !zraw) {
     document.getElementById('subtitle').textContent = '';
     listEl.innerHTML = '<div class="empty">Aucun classement dans ce lien.</div>';
@@ -123,12 +209,18 @@ async function render() {
       : '<div class="error">Lien invalide ou corrompu.</div>';
     return;
   }
+  renderData(data, false);
+}
 
+function renderData(data, live) {
+  const listEl = document.getElementById('list');
+  const footerEl = document.getElementById('footer');
   const title = data.g ? `Classement — ${data.g}` : 'Classement';
   document.title = '🏸 ' + title;
   document.getElementById('title').textContent = title;
   const d = data.t ? new Date(data.t) : null;
-  document.getElementById('subtitle').textContent = d && !isNaN(d)
+  if (live) setLiveBadge(data);
+  else document.getElementById('subtitle').textContent = d && !isNaN(d)
     ? 'État du classement le ' + d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
       + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
     : '';
@@ -160,8 +252,15 @@ async function render() {
   if (!hasHistory && players.length && players[0].length >= 5) {
     document.getElementById('hint').textContent = 'Touchez un joueur pour voir son bilan (détail par adversaire indisponible : classement trop long pour le QR)';
   }
+  footerEl.textContent = live ? 'BadmintonRank — classement en direct' : 'Généré par BadmintonRank — hors connexion';
   footerEl.style.display = 'block';
+  // Mise à jour en direct pendant qu'une fiche est ouverte : on la rafraîchit aussi.
+  if (live && openName !== null && document.getElementById('overlay').classList.contains('open')) {
+    const k = players.findIndex(e => String(e[0]) === openName);
+    if (k >= 0) openPlayer(k); else closeSheet();
+  }
 }
+let openName = null;
 
 // Sexe transmis dans le lien ('F' ou 'M'). Les anciens liens (sans cette info)
 // affichent un avatar neutre plutôt qu'une couleur devinée au hasard.
@@ -173,6 +272,7 @@ function genderColor(g) {
 function openPlayer(i) {
   const data = window.__data;
   const P = data.p, e = P[i];
+  openName = String(e[0] ?? '');
   const name = String(e[0] ?? ''), w = e[3] || 0, l = e[4] || 0, total = w + l;
   const wr = total ? Math.round(w / total * 100) : 0;
   const opps = {};
@@ -221,7 +321,7 @@ function openPlayer(i) {
     <button class="close" onclick="closeSheet()">Fermer</button>`;
   document.getElementById('overlay').classList.add('open');
 }
-function closeSheet() { document.getElementById('overlay').classList.remove('open'); }
+function closeSheet() { openName = null; document.getElementById('overlay').classList.remove('open'); }
 
 render();
 </script>
