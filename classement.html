@@ -7,7 +7,7 @@
 <!--
   Page statique et 100% autonome : elle ne contacte AUCUN serveur et ne lit
   AUCUNE base de données. Le classement entier est encodé dans le paramètre
-  "d" de l'URL (voir index.html, fonction buildClassementUrl) — cette page se
+  "d" de l'URL (voir index.html, fonction buildClassementPayload) — cette page se
   contente de le décoder et de l'afficher. Elle doit vivre dans le MÊME dossier
   que index.html (même hébergement) pour que le lien généré par le QR code
   fonctionne : le QR ne fait que pointer vers ce fichier avec les données
@@ -45,6 +45,24 @@
   .empty,.error{text-align:center;color:var(--muted);padding:48px 16px;font-size:14px}
   .error{color:#ef4444}
   footer{text-align:center;color:var(--muted);font-size:11px;margin-top:24px}
+  .rank-card.tap{cursor:pointer}
+  .chev{color:var(--muted);font-size:18px;padding-left:2px}
+  .hint{text-align:center;color:var(--muted);font-size:12px;margin-top:10px}
+  .wl{font-size:11px;color:var(--muted);margin-top:2px;font-weight:400}
+  .w{color:var(--green);font-weight:800}.l{color:#ef4444;font-weight:800}
+  /* Fiche joueur (feuille du bas) */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;justify-content:center;z-index:10}
+  .overlay.open{display:flex}
+  .sheet{background:var(--card);border:1px solid var(--border);border-radius:18px 18px 0 0;width:100%;max-width:480px;
+    max-height:85vh;overflow-y:auto;padding:18px 16px calc(18px + var(--safe-bottom))}
+  .sh-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .bar{background:var(--border);border-radius:6px;height:5px;overflow:hidden;margin-bottom:14px}
+  .bar>div{height:100%;background:var(--green);border-radius:6px}
+  .sec{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:4px}
+  .opp{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+  .opp .avatar{width:30px;height:30px;font-size:12px}
+  .close{width:100%;margin-top:14px;background:transparent;color:var(--text);border:1px solid var(--border);
+    border-radius:12px;padding:12px;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer}
 </style>
 </head>
 <body>
@@ -54,11 +72,15 @@
     <div class="sub" id="subtitle"></div>
   </header>
   <div class="list" id="list"></div>
+  <div class="hint" id="hint" style="display:none">Touchez un joueur pour voir son historique</div>
+  <div class="overlay" id="overlay" onclick="if(event.target===this)closeSheet()"><div class="sheet" id="sheet"></div></div>
   <footer id="footer" style="display:none">Généré par BadmintonRank — hors connexion</footer>
 
 <script>
-// Décodage du classement encodé dans l'URL : ?d=<base64 url-safe d'un JSON compact>
-// { g: nom du groupe ou null, t: date ISO, p: [[nom, points], ...] déjà triés }
+// Décodage du classement encodé dans l'URL : ?z=<JSON compressé> ou ?d=<JSON en base64 url-safe> (ancien format)
+// { g: nom du groupe ou null, t: date ISO,
+//   p: [[nom, points, 'F'|'M', victoires, défaites], ...] déjà triés,
+//   h: [[i, j, victoires de i, défaites de i, solde pts de i, solde pts de j], ...] (facultatif) }
 // Aucun réseau, aucune base de données : tout est dans le lien lui-même.
 function b64urlToStr(b64url) {
   let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
@@ -70,13 +92,23 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function render() {
+// Liens "?z=" : même JSON, compressé (deflate-raw) pour que l'historique tienne dans le QR.
+async function inflateB64url(b64url) {
+  let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4) b64 += '=';
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return await new Response(stream).text();
+}
+
+async function render() {
   const params = new URLSearchParams(location.search);
-  const raw = params.get('d');
+  const raw = params.get('d'), zraw = params.get('z');
   const listEl = document.getElementById('list');
   const footerEl = document.getElementById('footer');
 
-  if (!raw) {
+  if (!raw && !zraw) {
     document.getElementById('subtitle').textContent = '';
     listEl.innerHTML = '<div class="empty">Aucun classement dans ce lien.</div>';
     return;
@@ -84,9 +116,11 @@ function render() {
 
   let data;
   try {
-    data = JSON.parse(b64urlToStr(raw));
+    data = JSON.parse(zraw ? await inflateB64url(zraw) : b64urlToStr(raw));
   } catch (e) {
-    listEl.innerHTML = '<div class="error">Lien invalide ou corrompu.</div>';
+    listEl.innerHTML = zraw && typeof DecompressionStream !== 'function'
+      ? '<div class="error">Ce navigateur est trop ancien pour ouvrir ce lien (mettez à jour iOS / le navigateur).</div>'
+      : '<div class="error">Lien invalide ou corrompu.</div>';
     return;
   }
 
@@ -95,7 +129,8 @@ function render() {
   document.getElementById('title').textContent = title;
   const d = data.t ? new Date(data.t) : null;
   document.getElementById('subtitle').textContent = d && !isNaN(d)
-    ? 'Généré le ' + d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+    ? 'État du classement le ' + d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+      + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
     : '';
 
   const players = Array.isArray(data.p) ? data.p : [];
@@ -104,22 +139,89 @@ function render() {
     return;
   }
 
+  const hasHistory = Array.isArray(data.h);
+  window.__data = data;
   const medals = ['🥇', '🥈', '🥉'];
   listEl.innerHTML = players.map((entry, i) => {
     const name = String(entry[0] ?? '');
     const pts = entry[1] ?? '';
     const initial = name ? name[0].toUpperCase() : '?';
-    // Couleur d'avatar dérivée du nom (pas de données de genre transmises, pour rester compact) :
-    const hue = Array.from(name).reduce((h, c) => h + c.charCodeAt(0), 0) % 2 === 0 ? 'var(--male)' : 'var(--female)';
-    return `<div class="rank-card ${i < 3 ? 'top3' : ''}">
+    const hasWL = entry.length >= 5;
+    const w = entry[3] || 0, l = entry[4] || 0;
+    return `<div class="rank-card ${i < 3 ? 'top3' : ''} ${hasWL ? 'tap' : ''}" ${hasWL ? `onclick="openPlayer(${i})"` : ''}>
       <div class="pos ${i < 3 ? 'medal' : ''}">${medals[i] || '#' + (i + 1)}</div>
-      <div class="avatar" style="background:${hue}">${escapeHtml(initial)}</div>
-      <div class="name">${escapeHtml(name)}</div>
+      <div class="avatar" style="background:${genderColor(entry[2])}">${escapeHtml(initial)}</div>
+      <div class="name">${escapeHtml(name)}${hasWL ? `<div class="wl"><span class="w">${w}V</span> – <span class="l">${l}D</span></div>` : ''}</div>
       <div class="pts">${escapeHtml(String(pts))}</div>
+      ${hasWL ? '<div class="chev">›</div>' : ''}
     </div>`;
   }).join('');
+  document.getElementById('hint').style.display = players.length && players[0].length >= 5 ? 'block' : 'none';
+  if (!hasHistory && players.length && players[0].length >= 5) {
+    document.getElementById('hint').textContent = 'Touchez un joueur pour voir son bilan (détail par adversaire indisponible : classement trop long pour le QR)';
+  }
   footerEl.style.display = 'block';
 }
+
+// Sexe transmis dans le lien ('F' ou 'M'). Les anciens liens (sans cette info)
+// affichent un avatar neutre plutôt qu'une couleur devinée au hasard.
+function genderColor(g) {
+  return g === 'F' ? 'var(--female)' : g === 'M' ? 'var(--male)' : 'var(--muted)';
+}
+
+// Fiche d'un joueur : bilan + face-à-face, comme l'onglet Historique de l'app.
+function openPlayer(i) {
+  const data = window.__data;
+  const P = data.p, e = P[i];
+  const name = String(e[0] ?? ''), w = e[3] || 0, l = e[4] || 0, total = w + l;
+  const wr = total ? Math.round(w / total * 100) : 0;
+  const opps = {};
+  (data.h || []).forEach(h => {
+    const [a, b, wa, la, na, nb] = h;
+    if (a === i) opps[b] = { w: wa, l: la, net: na };
+    else if (b === i) opps[a] = { w: la, l: wa, net: nb };
+  });
+  const rows = Object.entries(opps)
+    .map(([k, o]) => ({ k: +k, ...o }))
+    .sort((x, y) => (y.w + y.l) - (x.w + x.l) || String(P[x.k][0]).localeCompare(String(P[y.k][0])));
+  let shown = 0;
+  const rowsHtml = rows.map(o => {
+    const op = P[o.k], n = String(op[0] ?? ''), t = o.w + o.l; shown += t;
+    const owr = t ? Math.round(o.w / t * 100) : 0;
+    return `<div class="opp">
+      <div class="avatar" style="background:${genderColor(op[2])}">${escapeHtml(n ? n[0].toUpperCase() : '?')}</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600">${escapeHtml(n)}</div>
+        <div style="font-size:10px;color:var(--muted)">${t} match${t > 1 ? 's' : ''} · ${owr}% de victoires</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:13px"><span class="w">${o.w}V</span> – <span class="l">${o.l}D</span></div>
+        <div style="font-size:10px;color:${o.net >= 0 ? 'var(--green)' : '#ef4444'}">${o.net >= 0 ? '+' : ''}${o.net} pts</div>
+      </div>
+    </div>`;
+  }).join('');
+  let body;
+  if (total === 0) body = '<div class="empty" style="padding:24px 0">Aucun match joué pour l\'instant</div>';
+  else if (!Array.isArray(data.h)) body = '<div class="empty" style="padding:24px 0">Détail par adversaire indisponible (classement trop long pour tenir dans le QR).</div>';
+  else {
+    body = `<div class="sec">Face à chaque adversaire</div>${rowsHtml || '<div class="empty" style="padding:16px 0">Aucun adversaire dans ce classement</div>'}`;
+    if (shown < total) body += `<div style="font-size:11px;color:var(--muted);margin-top:8px">${total - shown} match${total - shown > 1 ? 's' : ''} contre des joueurs hors de ce classement.</div>`;
+  }
+  document.getElementById('sheet').innerHTML = `
+    <div class="sh-head">
+      <div class="avatar" style="width:44px;height:44px;font-size:18px;background:${genderColor(e[2])}">${escapeHtml(name ? name[0].toUpperCase() : '?')}</div>
+      <div style="flex:1">
+        <div style="font-weight:800;font-size:17px">${escapeHtml(name)}</div>
+        <div style="font-size:12px;color:var(--muted)">#${i + 1} · ${escapeHtml(String(e[1] ?? ''))} pts · ${total} match${total > 1 ? 's' : ''} · ${wr}% victoires</div>
+      </div>
+      <div style="font-size:15px"><span class="w">${w}V</span> – <span class="l">${l}D</span></div>
+    </div>
+    <div class="bar"><div style="width:${wr}%"></div></div>
+    ${body}
+    <button class="close" onclick="closeSheet()">Fermer</button>`;
+  document.getElementById('overlay').classList.add('open');
+}
+function closeSheet() { document.getElementById('overlay').classList.remove('open'); }
 
 render();
 </script>

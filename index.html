@@ -568,7 +568,16 @@ let session = null;
 let matchP1Id = '', matchP2Id = '';
 let importList = [];
 let activeGroupId = null; // Toujours null au lancement
-let cachedGroupPlayers = null; // Cache de la liste filtrée du groupe actif
+let cachedGroupPlayers = null; // (obsolète, conservé pour compatibilité — voir activeGroupPlayers())
+// Joueurs du groupe actif, recalculés à CHAQUE appel à partir des données à jour.
+// Auparavant une copie figée était faite au choix du groupe : elle ne reflétait ni
+// les changements de groupe (onglet Joueurs) ni les nouveaux points après un match,
+// d'où une grille de l'onglet Match périmée. Le calcul est instantané (liste locale).
+function activeGroupPlayers() {
+  if (!activeGroupId || !groups[activeGroupId]) return null;
+  const ids = groups[activeGroupId].playerIds || [];
+  return objArr(players).filter(p => ids.includes(p.id));
+}
 
 // Répare les points ELO corrompus par un bug (désormais corrigé) qui pouvait, en clôturant une
 // séance, remplacer le score d'un joueur par une valeur invalide au lieu d'un nombre — ce qui
@@ -611,7 +620,7 @@ async function loadAll() {
     matches = _data.matches || {};
     groups  = _data.groups  || {};
     sessionsHistory = _data.sessions || {};
-    const needsSave = migrateLegacyNames() | repairCorruptedElo();
+    const needsSave = migrateLegacyNames() | normalizeGenders() | repairCorruptedElo();
     if (needsSave) await saveAll();
     document.getElementById('loadingScreen').style.display = 'none';
     return true;
@@ -696,6 +705,21 @@ function migrateLegacyNames() {
     migrated = true;
   });
   return migrated;
+}
+
+// Harmonise le champ "gender" sur 'F' / 'M' uniquement. Les anciennes données (ou un
+// import) pouvaient contenir 'f', 'Femme', 'Fille', 'H', 'Garçon'... : tout le code
+// d'affichage teste strictement gender === 'F', donc une valeur non normalisée
+// faisait apparaître une fille avec l'icône garçon.
+function normalizeGenders() {
+  let changed = false;
+  Object.values(players).forEach(p => {
+    if (p.gender === 'F' || p.gender === 'M') return;
+    const raw = String(p.gender || '').trim().toUpperCase();
+    p.gender = /^(F|W)/.test(raw) ? 'F' : 'M';
+    changed = true;
+  });
+  return changed;
 }
 
 // Helpers CRUD locaux + sync
@@ -1001,6 +1025,7 @@ async function saveAllData(data) {
   groups  = _data.groups;
   sessionsHistory = _data.sessions;
   migrateLegacyNames();
+  normalizeGenders();
   if (repairCorruptedElo()) showToast('Certains points ont été recalculés (données restaurées)', 'err');
   await saveAll();
 }
@@ -1086,7 +1111,7 @@ function renderMatchTab() {
   if (activeGroupId) {
     const filterSel = document.getElementById('matchGroupFilter');
     if (filterSel) filterSel.style.display = 'none';
-    const visible = cachedGroupPlayers || [];
+    const visible = activeGroupPlayers() || [];
     document.getElementById('matchHint').style.display = visible.length < 2 ? 'block' : 'none';
     updateSessionBar();
     renderPlayerGrid(visible);
@@ -1196,7 +1221,7 @@ function selectPlayer(id) {
   }
   updateBanner();
   updateMatchFormVisibility();
-  const visible = cachedGroupPlayers || objArr(players);
+  const visible = activeGroupPlayers() || objArr(players);
   renderPlayerGrid(visible);
 }
 window.selectPlayer = selectPlayer;
@@ -1204,7 +1229,7 @@ window.selectPlayer = selectPlayer;
 function clearPlayer(num) {
   if (num === 1) matchP1Id = '';
   else matchP2Id = '';
-  const visible = cachedGroupPlayers || objArr(players);
+  const visible = activeGroupPlayers() || objArr(players);
   renderPlayerGrid(visible);
   updateBanner();
   updateMatchFormVisibility();
@@ -1336,7 +1361,6 @@ function submitMatch() {
     sets=[{s1:'15',s2:''}];
     matchP1Id=''; matchP2Id='';
     renderSets(); updateMatchPreview();
-    updateBanner(); updateMatchFormVisibility();
     // 2. Remonter en haut de la page après validation (c'est <main> qui défile, pas window)
     document.querySelector('main')?.scrollTo({top: 0, behavior: 'smooth'});
     const btn=document.getElementById('submitMatchBtn');
@@ -1461,11 +1485,13 @@ function setNewGender(g) {
 }
 window.setNewGender = setNewGender;
 
+// La zone de recherche n'est PAS recréée à chaque lettre tapée : seule la liste
+// des résultats (#playerListResults) est redessinée. Auparavant toute la section,
+// champ de recherche compris, était reconstruite à chaque frappe, ce qui faisait
+// perdre le focus (et fermait le clavier iOS) après chaque lettre.
 function renderPlayerList() {
   const sec = document.getElementById('playerListSection');
   const search = document.getElementById('playerSearch')?.value||'';
-  const pArr = sortedPlayers().filter(p=>fullName(p).toLowerCase().includes(search.toLowerCase()));
-  const gArr = objArr(groups);
 
   sec.innerHTML = `
     <div class="card">
@@ -1477,7 +1503,20 @@ function renderPlayerList() {
       </div>
       <button class="btn-primary" onclick="addPlayer()">Ajouter</button>
     </div>
-    <input type="text" id="playerSearch" placeholder="🔍 Rechercher…" value="${search}" oninput="renderPlayerList()" style="background:#0a0f1e;border:1px solid var(--border);border-radius:10px;padding:11px 13px;color:var(--text);font-size:14px;width:100%;font-family:-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;outline:none"/>
+    <input type="text" id="playerSearch" placeholder="🔍 Rechercher…" value="${escapeHtml(search)}" oninput="renderPlayerListResults()" style="background:#0a0f1e;border:1px solid var(--border);border-radius:10px;padding:11px 13px;color:var(--text);font-size:16px;width:100%;font-family:-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;outline:none"/>
+    <div id="playerListResults" style="display:flex;flex-direction:column;gap:10px"></div>`;
+  sec.style.display='flex'; sec.style.flexDirection='column'; sec.style.gap='10px';
+  setNewGender(newPlayerGender);
+  renderPlayerListResults();
+}
+
+function renderPlayerListResults() {
+  const box = document.getElementById('playerListResults');
+  if (!box) return;
+  const search = (document.getElementById('playerSearch')?.value || '').toLowerCase();
+  const pArr = sortedPlayers().filter(p=>fullName(p).toLowerCase().includes(search));
+  const gArr = objArr(groups);
+  box.innerHTML = `
     ${pArr.length===0?'<div class="empty">Aucun joueur</div>':''}
     ${pArr.map(p => {
       const grp=getPlayerGroup(p.id);
@@ -1511,9 +1550,8 @@ function renderPlayerList() {
           ${playerGroupSelect(p, gArr, grp?.id || '')}
         </div>`;
     }).join('')}`;
-  sec.style.display='flex'; sec.style.flexDirection='column'; sec.style.gap='10px';
-  setNewGender(newPlayerGender);
 }
+window.renderPlayerListResults = renderPlayerListResults;
 
 // Onglet Joueurs → Groupes : vue "trombinoscope par groupe". L'affectation et
 // le changement de groupe d'un joueur se font via le menu déroulant affiché
@@ -1790,8 +1828,53 @@ function getClassementBaseUrl() {
   catch (e) { return null; }
 }
 
-function buildClassementPayload(list, groupName) {
-  return JSON.stringify({ g: groupName || null, t: new Date().toISOString(), p: list.map(p => [fullName(p), p.elo]) });
+// Format compact du lien partagé (lu par classement.html) :
+//  p : [[nom complet, points, 'F'|'M', victoires, défaites], ...] (déjà trié)
+//  h : face-à-face entre joueurs de la liste, une entrée par paire ayant joué :
+//      [i, j, victoires de i contre j, défaites de i contre j, solde pts de i, solde pts de j]
+//      (i, j = positions dans p). Omis si withHistory = false (lien trop long).
+function buildClassementPayload(list, groupName, withHistory = true) {
+  const data = {
+    g: groupName || null,
+    t: new Date().toISOString(),
+    p: list.map(p => [fullName(p), p.elo, p.gender === 'F' ? 'F' : 'M', p.wins || 0, p.losses || 0])
+  };
+  if (withHistory) {
+    const idx = {};
+    list.forEach((p, i) => { idx[p.id] = i; });
+    const pairs = {};
+    objArr(matches).forEach(m => {
+      const a = idx[m.winnerId], b = idx[m.loserId];
+      if (a === undefined || b === undefined) return; // adversaire hors de la liste partagée
+      const i = Math.min(a, b), j = Math.max(a, b);
+      const e = pairs[i + ',' + j] || (pairs[i + ',' + j] = [i, j, 0, 0, 0, 0]);
+      const dW = m.winnerDelta || 0, dL = m.loserDelta || 0;
+      if (a === i) { e[2]++; e[4] += dW; e[5] += dL; }   // i a gagné
+      else         { e[3]++; e[4] += dL; e[5] += dW; }   // j a gagné
+    });
+    data.h = Object.values(pairs);
+  }
+  return JSON.stringify(data);
+}
+
+// Au-delà de cette longueur, le QR (196 px à l'écran) devient trop dense pour être
+// lu de façon fiable par l'appareil photo : on préfère alors réduire le contenu.
+const QR_MAX_URL_LENGTH = 1300;
+
+// Compresse le contenu du lien (format "deflate-raw", natif dans Safari iOS 16.4+)
+// pour que l'historique des face-à-face tienne dans le QR. Lien "?z=" si compressé,
+// "?d=" (ancien format, non compressé) si le navigateur ne sait pas compresser.
+async function buildClassementUrl(baseUrl, json) {
+  if (typeof CompressionStream === 'function') {
+    try {
+      const stream = new Blob([new TextEncoder().encode(json)]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+      const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+      let bin = '';
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return baseUrl + '?z=' + btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    } catch (e) { /* repli sans compression */ }
+  }
+  return baseUrl + '?d=' + strToB64url(json);
 }
 
 function buildClassementText(list, groupName) {
@@ -1799,7 +1882,7 @@ function buildClassementText(list, groupName) {
   return title + '\n' + list.map((p,i) => `${i+1}. ${fullName(p)} — ${p.elo} pts`).join('\n');
 }
 
-function renderRankingQr(list, groupName) {
+async function renderRankingQr(list, groupName) {
   const box = document.getElementById('qrBox');
   if (!box) return;
   if (list.length === 0) {
@@ -1807,17 +1890,20 @@ function renderRankingQr(list, groupName) {
     return;
   }
   const baseUrl = getClassementBaseUrl();
+  const token = (renderRankingQr._token = (renderRankingQr._token || 0) + 1);
+  const qrOpts = { errorCorrectionLevel:'M', darkHex:'#0a0f1e', lightHex:'#ffffff', margin:2, width:196 };
 
-  let svg = null, mode = 'url', n = list.length;
-  // On tente d'abord la liste complète, puis on réduit progressivement si le
-  // lien dépasse la capacité d'un QR code (~2,9 Ko) pour les groupes nombreux.
+  let svg = null, mode = 'url', n = list.length, withHistory = true;
   if (baseUrl) {
-    while (n > 0) {
-      try {
-        const url = baseUrl + '?d=' + strToB64url(buildClassementPayload(list.slice(0, n), groupName));
-        svg = window.QR.toSVG(url, { errorCorrectionLevel:'M', darkHex:'#0a0f1e', lightHex:'#ffffff', margin:2, width:196 });
-        break;
-      } catch (e) { n = Math.floor(n * 0.8); } // trop long : on retente avec moins de joueurs
+    // Ordre d'essai : liste complète + historique, liste complète seule, puis liste réduite.
+    const attempts = [[list.length, true]];
+    for (let k = list.length; k > 0; k = Math.floor(k * 0.8)) attempts.push([k, false]);
+    for (const [k, hist] of attempts) {
+      const url = await buildClassementUrl(baseUrl, buildClassementPayload(list.slice(0, k), groupName, hist));
+      if (token !== renderRankingQr._token) return; // un rendu plus récent a pris le relais
+      if (url.length > QR_MAX_URL_LENGTH) continue;
+      try { svg = window.QR.toSVG(url, qrOpts); n = k; withHistory = hist; break; }
+      catch (e) { /* trop long : essai suivant */ }
     }
   }
   const truncated = mode === 'url' && svg && n < list.length;
@@ -1838,7 +1924,8 @@ function renderRankingQr(list, groupName) {
   const note = mode === 'text'
     ? (baseUrl ? 'Format texte simplifié (classement trop long)' : 'Format texte (page classement.html non hébergée)')
     : truncated ? `Lien vers le classement (${n}/${list.length} premiers — trop de joueurs pour tout inclure)`
-    : 'Ouvre le classement dans le navigateur';
+    : withHistory ? 'Ouvre le classement et l\'historique de chaque joueur'
+    : 'Ouvre le classement (historique détaillé trop long pour tenir dans le QR)';
   box.innerHTML = `
     <div style="font-weight:700;font-size:15px">📱 ${escapeHtml(groupName || 'Classement')}</div>
     <div style="font-size:12px;color:var(--muted);text-align:center">Scannez avec l'appareil photo — ${note}</div>
