@@ -2093,6 +2093,21 @@ function publicFingerprint(pub) {
   return JSON.stringify(pub, (k, v) => k === 't' ? undefined : v);
 }
 
+// Écriture refusée : on distingue les deux causes possibles en lisant (sans
+// compte) un groupe fictif, ce que les règles de l'étape 6 autorisent.
+//  - lecture acceptée  → les règles sont actives, c'est l'UID qui ne correspond pas ;
+//  - lecture refusée   → les règles de l'étape 6 ne sont pas en place sur CETTE base.
+async function diagnoseWriteDenied(raw) {
+  const detail = raw ? ` [réponse Firebase : « ${raw} »]` : '';
+  try {
+    const t = await fetch(`https://${cloud.dbHost}/public/groups/diagnostic.json`, { cache: 'no-store' });
+    if (t.ok) return `Écriture refusée : les règles sont bien publiées, mais l'UID écrit dedans n'est pas celui de ce compte. Dans les règles, l'UID doit être exactement : ${cloud.uid}${detail}`;
+    return `Écriture refusée : les règles de l'étape 6 ne sont pas actives sur la base ${cloud.dbHost} (encore « verrouillée »). Vérifiez que vous avez cliqué sur Publier dans l'onglet Règles de CETTE base${detail}`;
+  } catch (e) {
+    return 'Écriture refusée par Firebase : vérifiez les règles de la base (UID ci-dessous)' + detail;
+  }
+}
+
 function schedulePublish(delay = 1500) {
   if (!cloudReady()) return;
   clearTimeout(publishTimer);
@@ -2115,10 +2130,17 @@ async function publishNow(force = false) {
     });
     if (!r.ok) {
       const j = await r.json().catch(() => ({}));
-      const msg = r.status === 401 || /permission/i.test(j?.error || '')
-        ? 'Écriture refusée par Firebase : vérifiez les règles de la base (UID ci-dessous)'
+      const raw = String(j?.error || '');
+      // Jeton refusé (expiré, illisible) : on en redemande un et on réessaie une fois.
+      if (/token/i.test(raw) && !publishNow._retried) {
+        publishNow._retried = true; cloud.idTokenExp = 0;
+        publishInFlight = false;
+        try { return await publishNow(true); } finally { publishNow._retried = false; }
+      }
+      const msg = r.status === 401 || /permission/i.test(raw)
+        ? await diagnoseWriteDenied(raw)
         : r.status === 404 ? 'Base introuvable : vérifiez l\'adresse de la base'
-        : 'Erreur Firebase ' + r.status + (j?.error ? ' (' + j.error + ')' : '');
+        : 'Erreur Firebase ' + r.status + (raw ? ' (' + raw + ')' : '');
       throw new Error(msg);
     }
     lastPublishedJson = fp;
