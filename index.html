@@ -75,7 +75,7 @@
     }
     .nav-btn {
       flex: 1; background: none; border: none;
-      padding: 10px 4px 8px;
+      padding: 10px 2px 8px; min-width: 0;
       min-height: 56px;
       cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
       color: var(--muted); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; transition: color .15s;
@@ -83,7 +83,7 @@
     }
     .nav-btn.active { color: var(--accent); }
     .nav-icon { font-size: 22px; line-height: 1; }
-    .nav-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+    .nav-label { font-size: 9px; text-transform: uppercase; letter-spacing: .2px; font-weight: 600; white-space: nowrap; }
 
     /* MAIN — seule zone qui défile (voir body) */
     main {
@@ -102,13 +102,14 @@
     label.lbl, .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
 
     /* INPUTS — taille min 44px pour iOS */
-    input[type=text], input[type=number], select, textarea {
+    input[type=text], input[type=number], input[type=date], select, textarea {
       background: #0a0f1e; border: 1px solid var(--border); border-radius: 12px;
       padding: 13px 14px; color: var(--text); font-size: 16px; /* 16px évite le zoom iOS */
       width: 100%; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; outline: none;
       min-height: 48px; -webkit-appearance: none; appearance: none;
     }
     input:focus, select:focus, textarea:focus { border-color: rgba(245,158,11,0.6); }
+    input[type=date] { color-scheme: dark; }
     input[type=number] { font-size: 22px; font-weight: 700; text-align: center; }
 
     /* BUTTONS — min 48px pour iOS (Apple HIG) */
@@ -197,8 +198,14 @@
     .player-grid-btn.selected-p1 { border-color: var(--green); background: rgba(16,185,129,.12); }
     .player-grid-btn.selected-p2 { border-color: var(--accent); background: rgba(245,158,11,.12); }
     .player-grid-btn.disabled { opacity: .3; pointer-events: none; }
+    .player-grid-btn.out { opacity: .5; pointer-events: none; border-style: dashed; background: transparent; }
+    .player-grid-btn.out .pgname { color: var(--muted); }
+    .player-grid-btn .pgout { font-size: 9px; font-weight: 800; border-radius: 6px; padding: 1px 5px; }
     .player-grid-btn .pgname { font-size: 10px; font-weight: 700; color: var(--text); text-align: center; line-height: 1.2; word-break: break-word; }
+    .player-grid-btn { position: relative; }
     .player-grid-btn .pgelo { font-size: 9px; color: var(--muted); }
+    .player-grid-btn .pgrank { position: absolute; top: 3px; left: 4px; font-size: 10px; font-weight: 800; color: var(--accent); line-height: 1; }
+    .player-grid-btn .pgrank.top { font-size: 12px; }
 
     /* RANKING */
     .rank-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
@@ -338,6 +345,36 @@
       #printSheet .ps-bar { display:none; }
       #printSheet .ps-grid { grid-template-columns:repeat(2,1fr); }
     }
+
+    /* APPEL / PRÉSENCES */
+    .att-seances { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
+    .att-s-btn { background:var(--card); border:1px solid var(--border); border-radius:10px; color:var(--muted);
+      min-height:46px; font-weight:700; font-size:13px; display:flex; flex-direction:column; align-items:center;
+      justify-content:center; gap:1px; cursor:pointer; font-family:inherit; padding:4px 2px; }
+    .att-s-btn small { font-size:9px; font-weight:600; color:var(--muted); }
+    .att-s-btn.done { color:var(--text); border-color:rgba(16,185,129,.45); }
+    .att-s-btn.active { background:rgba(245,158,11,.15); border-color:var(--accent); color:var(--accent); }
+    .att-row { display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--border);
+      border-radius:12px; padding:6px 8px 6px 12px; min-height:56px; }
+    .att-row.unmarked { border-style:dashed; }
+    .att-sub { font-size:10px; font-weight:600; color:var(--male); margin-top:2px; }
+    .att-name { flex:1; min-width:0; font-size:14px; font-weight:700; line-height:1.25; overflow-wrap:anywhere; }
+    .att-btns { display:flex; gap:4px; flex-shrink:0; }
+    .att-b { width:38px; height:44px; border-radius:9px; border:1px solid var(--border); background:#0a0f1e;
+      color:var(--muted); font-weight:800; font-size:15px; cursor:pointer; font-family:inherit; padding:0; }
+    .att-b.on { background:var(--c); color:var(--f); border-color:transparent; }
+    .att-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--border); border-radius:12px; background:var(--card); }
+    .att-table { border-collapse:collapse; font-size:12px; width:max-content; min-width:100%; }
+    .att-table th, .att-table td { padding:6px 4px; text-align:center; border-bottom:1px solid var(--border); min-width:36px; }
+    .att-table tr:last-child td { border-bottom:none; }
+    .att-table th { font-size:10px; color:var(--muted); font-weight:700; line-height:1.4; }
+    .att-table .n { position:sticky; left:0; z-index:1; background:var(--card); text-align:left; padding:6px 8px 6px 10px;
+      min-width:118px; max-width:150px; font-weight:700; overflow-wrap:anywhere; border-right:1px solid var(--border); }
+    .att-cell { display:inline-flex; width:26px; height:26px; border-radius:7px; align-items:center; justify-content:center;
+      font-weight:800; position:relative; cursor:pointer; }
+    .att-cell.none { border:1px dashed var(--border); color:var(--muted); }
+    .att-cell.mod::after { content:''; position:absolute; top:-3px; right:-3px; width:8px; height:8px; border-radius:50%;
+      background:#fff; border:2px solid var(--card); }
   </style>
 
 </head>
@@ -507,9 +544,19 @@
     <input type="text" id="histSearch" placeholder="🔍 Rechercher un joueur…" oninput="renderHistory()"/>
     <div id="historyList"></div>
   </div>
+
+  <!-- APPEL : présences / absences / retards / dispenses / blessures sur 10 séances -->
+  <div id="tabAttendance" class="tab" style="display:none">
+    <div class="mini-tabs">
+      <button class="mini-tab active" id="atabCall" onclick="setAttSubTab('call')">📝 Appel</button>
+      <button class="mini-tab" id="atabBilan" onclick="setAttSubTab('bilan')">📊 Bilan du cycle</button>
+    </div>
+    <div id="attBody" style="display:flex;flex-direction:column;gap:12px"></div>
+  </div>
 </main>
 
 <nav>
+  <button class="nav-btn" id="navAttendance" onclick="setTab('Attendance')"><span class="nav-icon">📝</span><span class="nav-label">Appel</span></button>
   <button class="nav-btn active" id="navMatch" onclick="setTab('Match')"><span class="nav-icon">🏸</span><span class="nav-label">Match</span></button>
   <button class="nav-btn" id="navPlayers" onclick="setTab('Players')"><span class="nav-icon">👥</span><span class="nav-label">Joueurs</span></button>
   <button class="nav-btn" id="navRanking" onclick="setTab('Ranking')"><span class="nav-icon">🏆</span><span class="nav-label">Classement</span></button>
@@ -585,6 +632,9 @@ window.__onBmReadResult = function (content) {
 };
 
 let _data = { players:{}, matches:{}, groups:{}, sessions:{} };
+// Présences (onglet Appel) — voir la section « APPEL / PRÉSENCES » plus bas.
+let attendance = { dates:{}, marks:{} };
+let attSubTab = 'call', attGroupSel = null, attSeance = null, attSeanceKey = null;
 
 // ── STATE ────────────────────────────────────────────────────────────────────
 let players = {}, matches = {}, groups = {}, sessionsHistory = {};
@@ -653,6 +703,7 @@ async function loadAll() {
     matches = _data.matches || {};
     groups  = _data.groups  || {};
     sessionsHistory = _data.sessions || {};
+    attendance = _data.attendance = normalizeAttendance(_data.attendance);
     const needsSave = migrateLegacyNames() | normalizeGenders() | repairCorruptedElo();
     if (needsSave) await saveAll();
     updateCloudIndicators();
@@ -674,7 +725,7 @@ async function loadAll() {
 }
 
 async function saveAll() {
-  _data = { players, matches, groups, sessions: sessionsHistory };
+  _data = { players, matches, groups, sessions: sessionsHistory, attendance };
   const text = JSON.stringify(_data, null, 2);
   // Copie locale rapide — fonctionne même sans coquille native (pur PWA/Safari).
   try { localStorage.setItem(LOCAL_STORAGE_KEY, text); }
@@ -814,11 +865,13 @@ async function run(fn, msg) {
     matches = _data.matches || {};
     groups  = _data.groups  || {};
     sessionsHistory = _data.sessions || {};
+    attendance = _data.attendance = normalizeAttendance(_data.attendance);
     // 3. Rafraîchir l'UI immédiatement sans attendre la sauvegarde
     if (currentTab === 'Match')   renderMatchTab();
     if (currentTab === 'Players') renderPlayers();
     if (currentTab === 'Ranking') renderRanking();
     if (currentTab === 'History') renderHistory();
+    if (currentTab === 'Attendance') renderAttendance();
     if (msg) showToast(msg);
     setSyncing(false);
     // 4. Sauvegarder en arrière-plan (ne bloque plus l'UI)
@@ -986,7 +1039,7 @@ window.downloadBackup = downloadBackup;
 // Utile pour récupérer manuellement une copie quand l'app tourne en simple page
 // web (sans coquille native) : iOS propose alors "Enregistrer dans Fichiers".
 function exportDataFile() {
-  const text = JSON.stringify({ players, matches, groups }, null, 2);
+  const text = JSON.stringify({ players, matches, groups, sessions: sessionsHistory, attendance }, null, 2);
   const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(blob),
@@ -1055,12 +1108,14 @@ async function saveAllData(data) {
     players: data.players || {},
     matches: data.matches || {},
     groups:  data.groups  || {},
-    sessions: data.sessions || {}
+    sessions: data.sessions || {},
+    attendance: normalizeAttendance(data.attendance)
   };
   players = _data.players;
   matches = _data.matches;
   groups  = _data.groups;
   sessionsHistory = _data.sessions;
+  attendance = _data.attendance;
   migrateLegacyNames();
   normalizeGenders();
   if (repairCorruptedElo()) showToast('Certains points ont été recalculés (données restaurées)', 'err');
@@ -1128,7 +1183,7 @@ window.doConfirm = function() { if(confirmCallback) confirmCallback(); closeModa
 // ── TABS ──────────────────────────────────────────────────────────────────────
 function setTab(name) {
   currentTab = name;
-  ['Match','Players','Ranking','History'].forEach(t => {
+  ['Attendance','Match','Players','Ranking','History'].forEach(t => {
     document.getElementById('tab'+t).style.display = 'none';
     document.getElementById('nav'+t).classList.remove('active');
   });
@@ -1138,12 +1193,16 @@ function setTab(name) {
   if (name==='Players') renderPlayers();
   if (name==='Ranking') renderRanking();
   if (name==='History') renderHistory();
+  if (name==='Attendance') renderAttendance();
 }
 window.setTab = setTab;
 
 // ── MATCH TAB ────────────────────────────────────────────────────────────────
 function renderMatchTab() {
   updateUndoBar();
+  // Un joueur sélectionné puis noté absent/dispensé/blessé à l'appel est retiré de la sélection.
+  if (matchP1Id && attOutToday(matchP1Id)) matchP1Id = '';
+  if (matchP2Id && attOutToday(matchP2Id)) matchP2Id = '';
   // Si groupe actif : utiliser le cache — aucun recalcul, aucun accès réseau
   if (activeGroupId) {
     const filterSel = document.getElementById('matchGroupFilter');
@@ -1190,6 +1249,9 @@ function renderPlayerGrid(pArr) {
   if (!grid) return;
 
   const sorted = [...pArr].sort((a,b) => b.elo - a.elo);
+  // Rang au classement des joueurs affichés (groupe actif / filtre), comme dans l'onglet Classement.
+  matchRanks = {};
+  sorted.forEach((p, i) => { matchRanks[p.id] = i + 1; });
 
   if (sorted.length === 0) {
     grid.innerHTML = '<div class="empty">Aucun joueur disponible</div>';
@@ -1213,20 +1275,34 @@ function renderPlayerGrid(pArr) {
             ${avatarInitial(p)}
           </div>
           <span class="pgname">${shortDisplay(p)}</span>
-          <span class="pgelo">${p.elo} pts</span>
+          <span class="pgelo">${p.elo} pts</span>${rankBadge(p.id)}
         </button>`;
       }).join('')}`;
     return;
   }
 
+  // Étudiants absents / dispensés / blessés à l'appel du jour : grisés, en fin de grille.
+  const outIds = new Set(sorted.filter(p => attOutToday(p.id)).map(p => p.id));
+  sorted.sort((a, b) => (outIds.has(a.id) - outIds.has(b.id)) || (b.elo - a.elo));
+  const nOut = outIds.size;
+
   if (label) {
     if (!matchP1Id) label.textContent = '👆 Sélectionnez le Joueur 1';
     else if (!matchP2Id) label.textContent = '👆 Sélectionnez le Joueur 2';
     else label.textContent = '✓ Les deux joueurs sont sélectionnés';
+    if (nOut) label.textContent += ` · ${nOut} ne particip${nOut > 1 ? 'ent' : 'e'} pas (appel)`;
   }
 
   grid.className = 'player-grid';
   grid.innerHTML = sorted.map(p => {
+    const out = outIds.has(p.id) ? attOutToday(p.id) : null;
+    if (out) {
+      return `<button class="player-grid-btn out" disabled aria-label="${escapeHtml(fullName(p))} — ${ATT[out].label}">
+        <div class="avatar" style="width:28px;height:28px;font-size:13px;background:var(--muted)">${avatarInitial(p)}</div>
+        <span class="pgname">${shortDisplay(p)}</span>
+        <span class="pgout" style="background:${ATT[out].color};color:${ATT[out].fg}">${ATT[out].label}</span>${rankBadge(p.id)}
+      </button>`;
+    }
     let cls = 'player-grid-btn';
     if (p.id === matchP1Id) cls += ' selected-p1';
     else if (p.id === matchP2Id) cls += ' selected-p2';
@@ -1240,13 +1316,23 @@ function renderPlayerGrid(pArr) {
           ${avatarInitial(p)}
         </div>
         <span class="pgname">${shortDisplay(p)}</span>
-        <span class="pgelo">${p.elo} pts</span>
+        <span class="pgelo">${p.elo} pts</span>${rankBadge(p.id)}
       </button>`;
   }).join('');
 }
 
+let matchRanks = {};
+function rankBadge(id) {
+  const r = matchRanks[id];
+  if (!r) return '';
+  return `<span class="pgrank ${r <= 3 ? 'top' : ''}">${['🥇','🥈','🥉'][r - 1] || '#' + r}</span>`;
+}
+function rankLabel(id) { return matchRanks[id] ? '#' + matchRanks[id] + ' · ' : ''; }
+
 function selectPlayer(id) {
   if (!session) { showToast('Démarrez la séance d\'abord !', 'err'); return; }
+  const out = attOutToday(id);
+  if (out && id !== matchP1Id && id !== matchP2Id) { showToast(`${shortDisplay(players[id])} : ${ATT[out].label.toLowerCase()} à l'appel du jour`, 'err'); return; }
   if (!matchP1Id) {
     matchP1Id = id;
   } else if (!matchP2Id && id !== matchP1Id) {
@@ -1292,7 +1378,7 @@ function updateBanner() {
     a1.style.background = pl1.gender==='F' ? 'var(--female)' : 'var(--male)';
     a1.textContent = avatarInitial(pl1);
     n1.style.color = 'var(--green)'; n1.textContent = shortDisplay(pl1);
-    e1.textContent = pl1.elo + ' pts';
+    e1.textContent = rankLabel(pl1.id) + pl1.elo + ' pts';
   } else {
     a1.style.background = 'var(--muted)'; a1.textContent = '?';
     n1.style.color = 'var(--muted)'; n1.textContent = 'Joueur 1';
@@ -1307,7 +1393,7 @@ function updateBanner() {
     a2.style.background = pl2.gender==='F' ? 'var(--female)' : 'var(--male)';
     a2.textContent = avatarInitial(pl2);
     n2.style.color = 'var(--accent)'; n2.textContent = shortDisplay(pl2);
-    e2.textContent = pl2.elo + ' pts';
+    e2.textContent = rankLabel(pl2.id) + pl2.elo + ' pts';
   } else {
     a2.style.background = 'var(--muted)'; a2.textContent = '?';
     n2.style.color = 'var(--muted)'; n2.textContent = 'Joueur 2';
@@ -1690,6 +1776,8 @@ function confirmDeletePlayer(id) {
     setSyncing(true);
     run(async () => {
       await fbDelete(`players/${id}`);
+      await fbDelete(`attendance/marks/${id}`);
+      await fbDelete(`attendance/disp/${id}`);
       for (const g of objArr(groups)) {
         if ((g.playerIds||[]).includes(id))
           await fbUpdate(`groups/${g.id}`, {playerIds:(g.playerIds||[]).filter(x=>x!==id)});
@@ -2763,6 +2851,490 @@ function showDayViewer(data) {
     <button class="btn-secondary" style="width:100%" onclick="closeModal()">Fermer</button>`, null);
 }
 window.showDayViewer = showDayViewer;
+
+// ── APPEL / PRÉSENCES ────────────────────────────────────────────────────────
+// Suivi des présences sur NB_SEANCES séances par groupe. Données 100% locales,
+// enregistrées avec le reste (clé "attendance") et JAMAIS publiées en ligne
+// (le partage "En direct" n'envoie que les classements).
+//   attendance.dates[<id groupe>][n]  = 'AAAA-MM-JJ'  (date de la séance n du groupe)
+//   attendance.marks[<id joueur>][n]  = { s, note?, o?, t? }
+//     s : 'P' présent · 'R' retard · 'A' absent (injustifié) · 'D' dispensé · 'B' blessé
+//     o : statut d'origine quand le statut a été modifié APRÈS le jour de la séance
+//         (ex. absence transformée en dispense sur justificatif) ; t : date de la modification
+//   attendance.disp[<id joueur>] = [{ id, from:'AAAA-MM-JJ', to:'AAAA-MM-JJ', note? }]
+//     périodes de dispense : toute séance datée dans la période compte comme 'D' sans
+//     avoir à la pointer (sauf pointage explicite, qui reste prioritaire).
+// Les pointages sont rattachés à l'étudiant (pas au groupe) : un étudiant qui change
+// de groupe conserve son historique, séance par séance.
+const NB_SEANCES = 10;
+const ATT = {
+  P: { label: 'Présent',  plural: 'présent(s)',  color: 'var(--green)',  fg: '#000' },
+  R: { label: 'Retard',   plural: 'retard(s)',   color: 'var(--accent)', fg: '#000' },
+  A: { label: 'Absent',   plural: 'absent(s)',   color: 'var(--red)',    fg: '#fff' },
+  D: { label: 'Dispensé', plural: 'dispensé(s)', color: 'var(--male)',   fg: '#fff' },
+  B: { label: 'Blessé',   plural: 'blessé(s)',   color: '#8b5cf6',       fg: '#fff' }
+};
+const ATT_ORDER = ['P', 'R', 'A', 'D', 'B'];
+const ATT_OUT = ['A', 'D', 'B']; // statuts qui excluent de la saisie des matchs
+const ATT_LEGEND = 'P présent · R retard · A absent · D dispensé · B blessé';
+
+function normalizeAttendance(a) {
+  if (!a || typeof a !== 'object') a = {};
+  if (!a.dates || typeof a.dates !== 'object') a.dates = {};
+  if (!a.marks || typeof a.marks !== 'object') a.marks = {};
+  if (!a.disp || typeof a.disp !== 'object') a.disp = {};
+  return a;
+}
+
+// Date du jour en heure locale (toISOString() donnerait la date UTC).
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function attFmtDate(s, long) {
+  if (!s) return '';
+  const [y, m, d] = String(s).split('-');
+  return long ? `${d}/${m}/${y}` : `${d}/${m}`;
+}
+
+function attSortedGroups() { return objArr(groups).sort((a, b) => String(a.name).localeCompare(String(b.name), 'fr', { numeric: true })); }
+
+// Groupe affiché dans l'onglet Appel : le groupe actif du cours s'il y en a un,
+// sinon celui choisi dans le menu ; '_all' (tous les joueurs) si aucun groupe n'existe.
+function attGroupKey() {
+  if (activeGroupId && groups[activeGroupId]) return activeGroupId;
+  const gArr = attSortedGroups();
+  if (gArr.length === 0) return '_all';
+  if (attGroupSel && groups[attGroupSel]) return attGroupSel;
+  return gArr[0].id;
+}
+function attGroupName(key) { return key === '_all' ? 'Tous les joueurs' : (groups[key]?.name || ''); }
+function attMembers(key) {
+  const ids = key === '_all' ? null : (groups[key]?.playerIds || []);
+  return objArr(players).filter(p => !ids || ids.includes(p.id)).sort((a, b) =>
+    String(a.nom || '').localeCompare(String(b.nom || ''), 'fr') || String(a.prenom || '').localeCompare(String(b.prenom || ''), 'fr'));
+}
+function attDate(key, n) { return (attendance.dates[key] || {})[n] || ''; }
+function attMark(pid, n) { return (attendance.marks[pid] || {})[n] || null; }
+
+// Périodes de dispense
+function attPeriods(pid) { return attendance.disp[pid] || []; }
+function attPeriodAt(pid, date) { return date ? attPeriods(pid).find(d => d.from <= date && date <= d.to) || null : null; }
+// Statut effectif : pointage explicite, sinon dispense si la séance (ou, à défaut de
+// date, fallbackDate) tombe dans une période de dispense.
+function attEff(key, pid, n, fallbackDate) {
+  const m = attMark(pid, n);
+  if (m) return m;
+  const d = attPeriodAt(pid, attDate(key, n) || fallbackDate || '');
+  return d ? { s: 'D', note: d.note, per: d } : null;
+}
+// Groupes dont les séances concernent un étudiant (le sien, ou « tous » sans groupe).
+function attKeysFor(pid) {
+  const g = getPlayerGroup(pid);
+  const keys = [g ? g.id : '_all'];
+  const cur = attGroupKey();
+  if (!keys.includes(cur)) keys.push(cur);
+  return keys;
+}
+
+function attSeanceDone(key, n, members) { return !!attDate(key, n) || members.some(p => attMark(p.id, n)); }
+// Séance proposée à l'ouverture : celle datée d'aujourd'hui, sinon la première pas encore faite.
+function attDefaultSeance(key, members) {
+  const today = todayStr();
+  for (let n = 1; n <= NB_SEANCES; n++) if (attDate(key, n) === today) return n;
+  for (let n = 1; n <= NB_SEANCES; n++) if (!attSeanceDone(key, n, members)) return n;
+  return NB_SEANCES;
+}
+function attNameHtml(p) {
+  const nom = String(p.nom || '').trim(), prenom = String(p.prenom || '').trim();
+  if (!nom && !prenom) return escapeHtml(fullName(p));
+  return `${escapeHtml(nom.toUpperCase())} <span style="font-weight:400">${escapeHtml(prenom)}</span>`;
+}
+
+// Statut d'appel du jour qui exclut un étudiant de la saisie des matchs ('A', 'D', 'B'),
+// ou null. Un pointage explicite sur la séance datée d'aujourd'hui l'emporte (ex. un
+// dispensé noté présent peut jouer) ; sinon une période de dispense couvrant aujourd'hui
+// l'exclut, même si l'appel du jour n'a pas encore été fait. Un retard n'exclut pas.
+function attOutToday(pid) {
+  const today = todayStr();
+  const marks = attendance.marks[pid] || {};
+  const keys = attKeysFor(pid);
+  if (activeGroupId && !keys.includes(activeGroupId)) keys.push(activeGroupId);
+  for (const key of keys) {
+    for (let n = 1; n <= NB_SEANCES; n++) {
+      if (attDate(key, n) === today && marks[n]) return ATT_OUT.includes(marks[n].s) ? marks[n].s : null;
+    }
+  }
+  return attPeriodAt(pid, today) ? 'D' : null;
+}
+
+function persistAttendance() {
+  setSyncing(true);
+  saveAll().then(() => setSyncing(false)).catch(e => { setSyncing(false); showToast('Sauvegarde échouée : ' + e.message, 'err'); });
+}
+
+// Pose, change ou efface (s = null) le statut d'un étudiant pour la séance n.
+// Si la séance est antérieure à aujourd'hui, on garde la trace du statut d'origine.
+function applyAttMark(key, pid, n, s, note) {
+  const marks = attendance.marks[pid] || (attendance.marks[pid] = {});
+  const prev = marks[n];
+  const d = attDate(key, n);
+  if (!s) {
+    delete marks[n];
+    if (Object.keys(marks).length === 0) delete attendance.marks[pid];
+    return;
+  }
+  const m = { s };
+  const keptNote = note !== undefined ? note : (prev && prev.note);
+  if (keptNote) m.note = keptNote;
+  if (prev && prev.s !== s && d && d < todayStr()) { m.o = prev.o || prev.s; m.t = new Date().toISOString(); }
+  else if (prev && prev.s === s && prev.o) { m.o = prev.o; m.t = prev.t; }
+  if (m.o === m.s) { delete m.o; delete m.t; }
+  marks[n] = m;
+  if (!d) (attendance.dates[key] || (attendance.dates[key] = {}))[n] = todayStr();
+}
+
+// Ajoute une période de dispense ; les absences injustifiées déjà pointées sur des
+// séances de la période deviennent des dispenses (statut d'origine conservé).
+function attAddPeriod(pid, from, to, note) {
+  const list = attendance.disp[pid] || (attendance.disp[pid] = []);
+  const per = { id: uid(), from, to };
+  if (note) per.note = note;
+  list.push(per);
+  list.sort((a, b) => a.from.localeCompare(b.from));
+  attKeysFor(pid).forEach(key => {
+    for (let n = 1; n <= NB_SEANCES; n++) {
+      const d = attDate(key, n), m = attMark(pid, n);
+      if (d && from <= d && d <= to && m && m.s === 'A') applyAttMark(key, pid, n, 'D', note || m.note);
+    }
+  });
+  return per;
+}
+// Supprime une période ; les dispenses pointées dans la période sont annulées
+// (retour au statut d'origine s'il était connu, sinon case vide).
+function attRemovePeriod(pid, perId) {
+  const list = attPeriods(pid);
+  const per = list.find(x => x.id === perId);
+  if (!per) return;
+  attendance.disp[pid] = list.filter(x => x.id !== perId);
+  if (attendance.disp[pid].length === 0) delete attendance.disp[pid];
+  attKeysFor(pid).forEach(key => {
+    for (let n = 1; n <= NB_SEANCES; n++) {
+      const d = attDate(key, n), m = attMark(pid, n);
+      if (!(d && per.from <= d && d <= per.to && m && m.s === 'D')) continue;
+      if (m.o) { attendance.marks[pid][n] = { s: m.o }; }
+      else applyAttMark(key, pid, n, null);
+    }
+  });
+}
+
+function setAttSubTab(t) { attSubTab = t; renderAttendance(); }
+function setAttGroup(id) { attGroupSel = id; attSeance = null; renderAttendance(); }
+function setAttSeance(n) { attSeance = n; attSeanceKey = attGroupKey(); renderAttendance(); }
+
+function toggleAtt(pid, s) {
+  if (s === 'D') { openAttCell(pid, attSeance, 'D'); return; } // dispense : dates de début et de fin
+  const key = attGroupKey(), n = attSeance;
+  const prev = attMark(pid, n);
+  applyAttMark(key, pid, n, prev && prev.s === s ? null : s);
+  persistAttendance();
+  renderAttendance();
+}
+function attAllPresent() {
+  const key = attGroupKey(), n = attSeance, today = todayStr();
+  const todo = attMembers(key).filter(p => !attEff(key, p.id, n, today));
+  if (todo.length === 0) { showToast('Tous les étudiants sont déjà pointés'); return; }
+  todo.forEach(p => applyAttMark(key, p.id, n, 'P'));
+  if (!attDate(key, n)) (attendance.dates[key] || (attendance.dates[key] = {}))[n] = today;
+  persistAttendance();
+  renderAttendance();
+  showToast(`${todo.length} étudiant${todo.length > 1 ? 's' : ''} noté${todo.length > 1 ? 's' : ''} présent${todo.length > 1 ? 's' : ''}`);
+}
+function setAttDate(v) {
+  const key = attGroupKey(), n = attSeance;
+  if (v) (attendance.dates[key] || (attendance.dates[key] = {}))[n] = v;
+  else if (attendance.dates[key]) delete attendance.dates[key][n];
+  persistAttendance();
+  renderAttendance();
+}
+function confirmClearSeance() {
+  const key = attGroupKey(), n = attSeance;
+  showModal(`<div style="font-size:32px;margin-bottom:8px">🗑️</div>
+    <div style="font-weight:700;margin-bottom:4px">Effacer l'appel de la séance ${n} ?</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px">${escapeHtml(attGroupName(key))} — les pointages et la date de cette séance seront supprimés (les périodes de dispense sont conservées).</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" style="background:var(--red);flex:1" onclick="doConfirm()">Effacer</button>
+      <button class="btn-secondary" style="flex:1" onclick="closeModal()">Annuler</button>
+    </div>`, () => {
+    attMembers(key).forEach(p => applyAttMark(key, p.id, n, null));
+    if (attendance.dates[key]) delete attendance.dates[key][n];
+    persistAttendance();
+    renderAttendance();
+    showToast('Appel effacé');
+  });
+}
+
+function attGroupPicker(key) {
+  if (key === '_all' || (activeGroupId && groups[activeGroupId]))
+    return `<span class="ranking-scope-label">📁 ${escapeHtml(attGroupName(key))}</span>`;
+  return `<select class="mini-select" onchange="setAttGroup(this.value)">
+    ${attSortedGroups().map(g => `<option value="${g.id}" ${g.id === key ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
+  </select>`;
+}
+
+function renderAttendance() {
+  const body = document.getElementById('attBody');
+  if (!body) return;
+  document.getElementById('atabCall').classList.toggle('active', attSubTab === 'call');
+  document.getElementById('atabBilan').classList.toggle('active', attSubTab === 'bilan');
+  const main = document.querySelector('main');
+  const top = main ? main.scrollTop : 0;
+  if (attSubTab === 'call') renderAttCall(body); else renderAttBilan(body);
+  if (main) main.scrollTop = top; // un pointage ne doit pas faire sauter la liste
+}
+
+function renderAttCall(body) {
+  const key = attGroupKey();
+  const members = attMembers(key);
+  if (attSeanceKey !== key || !attSeance) { attSeance = attDefaultSeance(key, members); attSeanceKey = key; }
+  const n = attSeance, date = attDate(key, n), today = todayStr();
+  const counts = { P: 0, R: 0, A: 0, D: 0, B: 0 };
+  let unmarked = 0;
+  members.forEach(p => { const m = attEff(key, p.id, n, today); if (m && counts[m.s] !== undefined) counts[m.s]++; else unmarked++; });
+
+  const seanceBtns = Array.from({ length: NB_SEANCES }, (_, i) => i + 1).map(k => {
+    const d = attDate(key, k), done = attSeanceDone(key, k, members);
+    return `<button class="att-s-btn ${done ? 'done' : ''} ${k === n ? 'active' : ''}" onclick="setAttSeance(${k})">
+      <span>S${k}${done ? ' ✓' : ''}</span><small>${d ? attFmtDate(d) : '—'}</small></button>`;
+  }).join('');
+
+  const summary = ATT_ORDER.filter(s => counts[s] > 0)
+    .map(s => `<span><b style="color:${ATT[s].color}">${counts[s]}</b> ${ATT[s].plural}</span>`).join(' · ');
+  const status = members.length === 0 ? ''
+    : unmarked === members.length ? `<span style="color:var(--muted)">Appel non commencé — ${members.length} étudiant${members.length > 1 ? 's' : ''}</span>`
+    : unmarked > 0 ? `<span style="color:var(--accent);font-weight:700">${unmarked} à pointer</span>`
+    : `<span style="color:var(--green);font-weight:700">✓ Appel complet</span>`;
+
+  const rows = members.map(p => {
+    const m = attEff(key, p.id, n, today);
+    const per = attPeriodAt(p.id, date || today);
+    const sub = per && (!m || m.s === 'D')
+      ? `<div class="att-sub">Dispensé du ${attFmtDate(per.from)} au ${attFmtDate(per.to, true)}${per.note ? ' · ' + escapeHtml(per.note) : ''}</div>` : '';
+    return `<div class="att-row ${m ? '' : 'unmarked'}">
+      <div class="att-name">${attNameHtml(p)}${sub}</div>
+      <div class="att-btns">${ATT_ORDER.map(s =>
+        `<button class="att-b ${m && m.s === s ? 'on' : ''}" style="--c:${ATT[s].color};--f:${ATT[s].fg}" aria-label="${ATT[s].label}" onclick="toggleAtt('${p.id}','${s}')">${s}</button>`).join('')}</div>
+    </div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="row"><h2>Appel</h2>${attGroupPicker(key)}</div>
+    <div class="att-seances">${seanceBtns}</div>
+    <div class="card">
+      <div class="row">
+        <span style="font-weight:800;font-size:16px">Séance ${n}</span>
+        <input type="date" value="${escapeHtml(date)}" onchange="setAttDate(this.value)" style="width:auto;min-height:40px;padding:8px 10px" aria-label="Date de la séance"/>
+      </div>
+      <div style="font-size:13px;line-height:1.6">${summary}${summary && status ? '<br/>' : ''}${status}</div>
+      ${unmarked > 0 ? `<button class="btn-primary" onclick="attAllPresent()">✅ ${unmarked === members.length ? 'Tous présents' : `Le reste présent (${unmarked})`}</button>` : ''}
+      <div style="font-size:11px;color:var(--muted);text-align:center">${ATT_LEGEND}<br/>D ouvre la saisie de la période de dispense (début / fin)</div>
+    </div>
+    ${members.length === 0 ? '<div class="empty">Aucun étudiant dans ce groupe — ajoutez-les dans l\'onglet Joueurs</div>' : rows}
+    ${attSeanceDone(key, n, members) ? `<button class="btn-secondary" style="font-size:13px;min-height:44px;padding:10px" onclick="confirmClearSeance()">🗑️ Effacer l'appel de cette séance</button>` : ''}`;
+}
+
+function attTotals(key, pid) {
+  const t = { P: 0, R: 0, A: 0, D: 0, B: 0 };
+  for (let n = 1; n <= NB_SEANCES; n++) { const m = attEff(key, pid, n); if (m && t[m.s] !== undefined) t[m.s]++; }
+  return t;
+}
+
+function renderAttBilan(body) {
+  const key = attGroupKey();
+  const members = attMembers(key);
+  const seances = Array.from({ length: NB_SEANCES }, (_, i) => i + 1);
+  const today = todayStr();
+
+  const pending = [];
+  members.forEach(p => seances.forEach(n => { const m = attEff(key, p.id, n); if (m && m.s === 'A') pending.push({ p, n }); }));
+  pending.sort((a, b) => a.n - b.n);
+
+  const periods = [];
+  members.forEach(p => attPeriods(p.id).forEach(per => periods.push({ p, per })));
+  periods.sort((a, b) => b.per.to.localeCompare(a.per.to));
+
+  const head = `<tr><th class="n">Étudiant</th>${seances.map(n =>
+    `<th>S${n}<br/><span style="font-weight:400">${attDate(key, n) ? attFmtDate(attDate(key, n)) : '—'}</span></th>`).join('')}
+    ${ATT_ORDER.map(s => `<th style="color:${ATT[s].color};font-size:12px">${s}</th>`).join('')}</tr>`;
+  const rows = members.map(p => {
+    const t = attTotals(key, p.id);
+    return `<tr><td class="n">${attNameHtml(p)}</td>${seances.map(n => {
+      const m = attEff(key, p.id, n);
+      return `<td onclick="openAttCell('${p.id}',${n})">${m && ATT[m.s]
+        ? `<span class="att-cell ${m.o ? 'mod' : ''}" style="background:${ATT[m.s].color};color:${ATT[m.s].fg}">${m.s}</span>`
+        : '<span class="att-cell none">·</span>'}</td>`;
+    }).join('')}${ATT_ORDER.map(s => `<td style="font-weight:800;color:${t[s] ? ATT[s].color : 'var(--muted)'}">${t[s]}</td>`).join('')}</tr>`;
+  }).join('');
+
+  const multi = key !== '_all' && attSortedGroups().length > 1;
+  body.innerHTML = `
+    <div class="row"><h2>Bilan du cycle</h2>${attGroupPicker(key)}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-export" onclick="exportAttendanceCSV(false)">⬇ Exporter le tableau (CSV)</button>
+      ${multi ? `<button class="btn-export" style="border-color:rgba(59,130,246,0.4);color:var(--male);background:rgba(59,130,246,0.08)" onclick="exportAttendanceCSV(true)">⬇ Tous les groupes</button>` : ''}
+    </div>
+    ${pending.length ? `<div class="card">
+      <span class="lbl">Absences injustifiées à régulariser (${pending.length})</span>
+      ${pending.map(({ p, n }) => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600">${attNameHtml(p)}</div>
+          <div style="font-size:11px;color:var(--muted)">Séance ${n}${attDate(key, n) ? ' · ' + attFmtDate(attDate(key, n), true) : ''}</div>
+        </div>
+        <button class="btn-link" style="border-color:var(--male);color:var(--male)" onclick="openAttCell('${p.id}',${n},'D')">→ Dispense</button>
+      </div>`).join('')}
+    </div>` : ''}
+    ${periods.length ? `<div class="card">
+      <span class="lbl">Périodes de dispense (${periods.length})</span>
+      ${periods.map(({ p, per }) => {
+        const cur = per.from <= today && today <= per.to, past = per.to < today;
+        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600">${attNameHtml(p)}</div>
+          <div style="font-size:11px;color:${cur ? 'var(--male)' : 'var(--muted)'}">Du ${attFmtDate(per.from, true)} au ${attFmtDate(per.to, true)}${cur ? ' · en cours' : past ? ' · terminée' : ' · à venir'}${per.note ? ' · ' + escapeHtml(per.note) : ''}</div>
+        </div>
+        <button class="btn-icon" aria-label="Supprimer la période" onclick="confirmDeletePeriod('${p.id}','${per.id}')">🗑️</button>
+      </div>`; }).join('')}
+    </div>` : ''}
+    ${members.length === 0 ? '<div class="empty">Aucun étudiant dans ce groupe</div>' : `
+    <div class="att-table-wrap"><table class="att-table">${head}${rows}</table></div>
+    <div style="font-size:11px;color:var(--muted);text-align:center;line-height:1.6">${ATT_LEGEND}<br/>Touchez une case pour la modifier · point blanc = statut modifié après la séance</div>`}`;
+}
+
+function confirmDeletePeriod(pid, perId) {
+  const per = attPeriods(pid).find(x => x.id === perId), p = players[pid];
+  if (!per || !p) return;
+  showModal(`<div style="font-size:32px;margin-bottom:8px">🗑️</div>
+    <div style="font-weight:700;margin-bottom:4px">Supprimer la dispense de ${escapeHtml(fullName(p))} ?</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Du ${attFmtDate(per.from, true)} au ${attFmtDate(per.to, true)} — les séances concernées reviennent à leur statut d'origine (ou à pointer).</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" style="background:var(--red);flex:1" onclick="doConfirm()">Supprimer</button>
+      <button class="btn-secondary" style="flex:1" onclick="closeModal()">Annuler</button>
+    </div>`, () => {
+    attRemovePeriod(pid, perId);
+    persistAttendance();
+    renderAttendance();
+    if (currentTab === 'Match') renderMatchTab();
+    showToast('Période de dispense supprimée');
+  });
+}
+
+// Fenêtre de pointage d'une case (statut + remarque ; dates de début/fin pour une dispense).
+let attEdit = null;
+function openAttCell(pid, n, preset) {
+  const p = players[pid];
+  if (!p) return;
+  const key = attGroupKey(), today = todayStr();
+  const date = attDate(key, n);
+  const m = attEff(key, pid, n, date ? '' : today);
+  const per = attPeriodAt(pid, date || today);
+  attEdit = { key, pid, n, s: preset || (m ? m.s : null), per };
+  const from = per ? per.from : (date || today), to = per ? per.to : from;
+  const note = (m && m.note) || (per && per.note) || '';
+  showModal(`
+    <div style="font-weight:800;font-size:17px;margin-bottom:2px">${attNameHtml(p)}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Séance ${n}${date ? ' · ' + attFmtDate(date, true) : ''}${m && m.o && ATT[m.o] ? `<br/>Initialement : ${ATT[m.o].label.toLowerCase()}${m.t ? ' — modifié le ' + new Date(m.t).toLocaleDateString('fr-FR') : ''}` : ''}</div>
+    <div id="attEditBtns" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px"></div>
+    <div id="attDispBox" style="display:none;flex-direction:column;gap:8px;margin-bottom:12px;text-align:left;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.3);border-radius:12px;padding:10px">
+      <span class="lbl" style="color:var(--male)">Période de dispense</span>
+      <div style="display:flex;gap:8px">
+        <label style="flex:1;font-size:11px;color:var(--muted)">Du<input type="date" id="attDispFrom" value="${escapeHtml(from)}" style="margin-top:4px;padding:8px"/></label>
+        <label style="flex:1;font-size:11px;color:var(--muted)">Au<input type="date" id="attDispTo" value="${escapeHtml(to)}" style="margin-top:4px;padding:8px"/></label>
+      </div>
+      <div style="font-size:11px;color:var(--muted)">Toutes les séances de la période seront comptées « dispensé » ; l'étudiant est grisé dans la saisie des matchs.</div>
+      ${per ? `<button class="btn-secondary" style="min-height:40px;padding:8px;font-size:13px;color:var(--red)" onclick="closeModal();confirmDeletePeriod('${pid}','${per.id}')">Supprimer cette période</button>` : ''}
+    </div>
+    <input type="text" id="attEditNote" placeholder="Remarque (ex : certificat médical reçu)" value="${escapeHtml(note)}" style="margin-bottom:14px"/>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" style="flex:1" onclick="attEditSave()">Enregistrer</button>
+      <button class="btn-secondary" style="flex:1" onclick="closeModal()">Annuler</button>
+    </div>`, null);
+  renderAttEditBtns();
+}
+function renderAttEditBtns() {
+  const el = document.getElementById('attEditBtns');
+  if (!el || !attEdit) return;
+  el.innerHTML = ATT_ORDER.map(s => `<button class="att-b ${attEdit.s === s ? 'on' : ''}" style="--c:${ATT[s].color};--f:${ATT[s].fg};width:100%;height:58px;font-size:11px;line-height:1.3" onclick="attEditPick('${s}')"><span style="font-size:17px">${s}</span><br/>${ATT[s].label}</button>`).join('');
+  const box = document.getElementById('attDispBox');
+  if (box) box.style.display = attEdit.s === 'D' ? 'flex' : 'none';
+}
+function attEditPick(s) { attEdit.s = attEdit.s === s ? null : s; renderAttEditBtns(); }
+function attEditSave() {
+  if (!attEdit) return;
+  const { key, pid, n, s, per } = attEdit;
+  const note = (document.getElementById('attEditNote')?.value || '').trim();
+  if (s === 'D') {
+    const from = document.getElementById('attDispFrom')?.value || '';
+    const to = document.getElementById('attDispTo')?.value || '';
+    if (!from || !to) { showToast('Indiquez les dates de début et de fin', 'err'); return; }
+    if (to < from) { showToast('La date de fin est avant la date de début', 'err'); return; }
+    if (per) attRemovePeriod(pid, per.id);
+    attAddPeriod(pid, from, to, note);
+    // La séance pointée devient « dispensé » si elle tombe dans la période (ou n'est pas encore datée).
+    const d = attDate(key, n) || todayStr();
+    if (from <= d && d <= to) applyAttMark(key, pid, n, 'D', note);
+    attEdit = null;
+    closeModal();
+    persistAttendance();
+    renderAttendance();
+    showToast(`Dispense du ${attFmtDate(from)} au ${attFmtDate(to)}`);
+    return;
+  }
+  applyAttMark(key, pid, n, s, note);
+  attEdit = null;
+  closeModal();
+  persistAttendance();
+  renderAttendance();
+  showToast('Pointage mis à jour');
+}
+
+// ── Export du tableau général (CSV ; s'ouvre dans Excel / LibreOffice) ──
+function csvField(v) {
+  let s = String(v ?? '');
+  if (/^[=+\-@]/.test(s)) s = "'" + s; // jamais interprété comme une formule par le tableur
+  return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function attCsvBlock(key) {
+  const seances = Array.from({ length: NB_SEANCES }, (_, i) => i + 1);
+  const head = ['Groupe', 'Nom', 'Prénom',
+    ...seances.map(n => 'S' + n + (attDate(key, n) ? ' (' + attFmtDate(attDate(key, n), true) + ')' : '')),
+    'Présences', 'Retards', 'Absences injustifiées', 'Dispenses', 'Blessures', 'Périodes de dispense', 'Remarques'];
+  const rows = attMembers(key).map(p => {
+    const t = attTotals(key, p.id), notes = [];
+    const cells = seances.map(n => {
+      const m = attEff(key, p.id, n);
+      if (!m) return '';
+      const perHere = attPeriodAt(p.id, attDate(key, n));
+      if (m.note && !m.per && !(m.s === 'D' && perHere && perHere.note === m.note)) notes.push(`S${n} : ${m.note}`);
+      return m.s + (m.o ? ` (ex-${m.o})` : '');
+    });
+    const pers = attPeriods(p.id).map(x => `du ${attFmtDate(x.from, true)} au ${attFmtDate(x.to, true)}${x.note ? ' (' + x.note + ')' : ''}`).join(' | ');
+    return [attGroupName(key), p.nom || '', p.prenom || '', ...cells, t.P, t.R, t.A, t.D, t.B, pers, notes.join(' | ')];
+  });
+  return [head, ...rows];
+}
+function exportAttendanceCSV(all) {
+  const keys = all ? attSortedGroups().map(g => g.id) : [attGroupKey()];
+  const lines = [];
+  keys.forEach((k, i) => { if (i) lines.push([]); lines.push(...attCsvBlock(k)); });
+  lines.push([]);
+  lines.push(['Légende : P = présent, R = retard, A = absence injustifiée, D = dispense, B = blessure. « (ex-A) » = statut modifié après la séance (statut initial entre parenthèses).']);
+  const blob = new Blob(['﻿' + lines.map(r => r.map(csvField).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const slug = (all ? 'tous-les-groupes' : attGroupName(keys[0])).replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'groupe';
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `presences_${slug}_${todayStr()}.csv` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  showToast('Tableau des présences exporté');
+}
 
 function confirmDeleteMatch(id) {
   const m = matches[id];
